@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useAuthStore } from '@/stores';
+import { useAuthStore, useConfigStore } from '@/stores';
 import { usageStatsApi, normalizeMemoryStats } from '@/services/api/usageStats';
 import { normalizeApiBase } from '@/utils/connection';
 import type {
@@ -10,6 +10,17 @@ import type {
 } from '@/types/usageStats';
 
 const STORAGE_KEY_SERVICE_URL = 'cli-proxy-usage-service-url';
+
+function normalizeBoolean(value: unknown): boolean | undefined {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['true', '1', 'yes', 'y', 'on'].includes(normalized)) return true;
+    if (['false', '0', 'no', 'n', 'off'].includes(normalized)) return false;
+  }
+  return undefined;
+}
 
 function deriveDefaultServiceUrl(apiBase: string): string {
   try {
@@ -43,6 +54,9 @@ export function useUsageStats() {
   const { t } = useTranslation();
   const apiBase = useAuthStore((s) => s.apiBase);
   const managementKey = useAuthStore((s) => s.managementKey);
+  const usageStatisticsEnabled = useConfigStore((s) =>
+    normalizeBoolean(s.config?.raw?.['usage-statistics-enabled']),
+  );
 
   const [state, setState] = useState<UsageStatsState>({
     loading: false,
@@ -111,6 +125,7 @@ export function useUsageStats() {
       const normalized = normalizeMemoryStats(rawMemory);
 
       if (
+        usageStatisticsEnabled === false &&
         normalized.summary.totalRequests === 0 &&
         normalized.byProvider.length === 0 &&
         normalized.byAccount.length === 0
@@ -154,7 +169,7 @@ export function useUsageStats() {
         error: finalMessage,
       }));
     }
-  }, [state.serviceUrl, state.range, managementKey, t]);
+  }, [state.serviceUrl, state.range, managementKey, usageStatisticsEnabled, t]);
 
   useEffect(() => {
     return () => {

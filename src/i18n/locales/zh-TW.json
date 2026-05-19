@@ -1504,7 +1504,7 @@
     "service_last_inserted": "最後寫入",
     "token_unavailable": "不可用",
     "empty_postgres": "暫無持久化統計資料。Usage 服務處理請求後將在此顯示。",
-    "empty_memory": "暫無記憶體統計資料。請在設定中啟用 usage-statistics-enabled 以開始收集。",
+    "empty_memory": "暫無記憶體統計資料，目前數值以 0 顯示。請先透過 CPA 發起請求，重新整理後查看。",
     "empty_memory_disabled": "記憶體用量統計未啟用。請在設定面板中啟用 usage-statistics-enabled 以檢視請求統計。",
     "error_auth": "認證失敗，請檢查管理金鑰。",
     "error_connection": "無法連線到 Usage 服務。",

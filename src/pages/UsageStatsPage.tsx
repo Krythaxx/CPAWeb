@@ -35,6 +35,12 @@ export function UsageStatsPage() {
   const isUnavailable = stats.dataSource === 'unavailable';
   const isError = stats.dataSource === 'error';
   const showTokenColumns = !isMemory && !isUnavailable && !isError;
+  const isMemoryEmpty =
+    isMemory &&
+    stats.data?.summary.totalRequests === 0 &&
+    stats.data.byProvider.length === 0 &&
+    stats.data.byAccount.length === 0;
+  const showZeroTokenValues = showTokenColumns || isMemoryEmpty;
 
   const renderSourceBadge = () => {
     if (stats.loading) return null;
@@ -84,23 +90,23 @@ export function UsageStatsPage() {
       },
       {
         label: t('usage_stats.summary_total_tokens'),
-        value: s && showTokenColumns ? formatNumber(s.totalTokens) : null,
-        unavailable: isMemory,
+        value: s && showZeroTokenValues ? formatNumber(s.totalTokens) : null,
+        unavailable: isMemory && !isMemoryEmpty,
       },
       {
         label: t('usage_stats.summary_input_tokens'),
-        value: s && showTokenColumns ? formatNumber(s.inputTokens) : null,
-        unavailable: isMemory,
+        value: s && showZeroTokenValues ? formatNumber(s.inputTokens) : null,
+        unavailable: isMemory && !isMemoryEmpty,
       },
       {
         label: t('usage_stats.summary_output_tokens'),
-        value: s && showTokenColumns ? formatNumber(s.outputTokens) : null,
-        unavailable: isMemory,
+        value: s && showZeroTokenValues ? formatNumber(s.outputTokens) : null,
+        unavailable: isMemory && !isMemoryEmpty,
       },
       {
         label: t('usage_stats.summary_cached_tokens'),
-        value: s && showTokenColumns ? formatNumber(s.cachedTokens) : null,
-        unavailable: isMemory,
+        value: s && showZeroTokenValues ? formatNumber(s.cachedTokens) : null,
+        unavailable: isMemory && !isMemoryEmpty,
       },
     ];
 
@@ -308,6 +314,9 @@ export function UsageStatsPage() {
           {renderGroupTable(
             t('usage_stats.section_by_account'),
             stats.data.byAccount,
+          )}
+          {isMemoryEmpty && (
+            <div className={styles.emptyBox}>{t('usage_stats.empty_memory')}</div>
           )}
         </>
       )}

@@ -1478,7 +1478,7 @@
     "service_last_inserted": "Last Inserted",
     "token_unavailable": "Unavailable",
     "empty_postgres": "No persistent statistics recorded yet. Events will appear after the usage service processes requests.",
-    "empty_memory": "No in-memory statistics available. Enable usage-statistics-enabled in config to start collecting.",
+    "empty_memory": "No in-memory statistics recorded yet. Current values are shown as 0. Send requests through CPA, then refresh this page.",
     "empty_memory_disabled": "In-memory usage statistics are not enabled. Enable usage-statistics-enabled in the config panel to see request statistics here.",
     "error_auth": "Authentication failed. Check your management key.",
     "error_connection": "Failed to connect to the usage service.",

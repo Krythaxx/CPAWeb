@@ -1478,7 +1478,7 @@
     "service_last_inserted": "最后写入",
     "token_unavailable": "不可用",
     "empty_postgres": "暂无持久化统计数据。Usage 服务处理请求后将在此显示。",
-    "empty_memory": "暂无内存统计数据。请在配置中启用 usage-statistics-enabled 以开始收集。",
+    "empty_memory": "暂无内存统计数据，当前数值按 0 显示。请先通过 CPA 发起请求，刷新后查看。",
     "empty_memory_disabled": "内存用量统计未启用。请在配置面板中启用 usage-statistics-enabled 以查看请求统计。",
     "error_auth": "认证失败，请检查管理密钥。",
     "error_connection": "无法连接到 Usage 服务。",
