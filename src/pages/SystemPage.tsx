@@ -13,7 +13,6 @@ import {
   useThemeStore,
 } from '@/stores';
 import { configApi, versionApi } from '@/services/api';
-import { configFileApi } from '@/services/api/configFile';
 import { apiKeysApi } from '@/services/api/apiKeys';
 import { classifyModels } from '@/utils/models';
 import { STORAGE_KEY_AUTH } from '@/utils/constants';
@@ -43,6 +42,26 @@ const MODEL_CATEGORY_ICONS: Record<string, string | { light: string; dark: strin
   deepseek: iconDeepseek,
   minimax: iconMinimax,
 };
+
+const DEFAULT_WEBUI_REPO_URL = 'https://github.com/router-for-me/Cli-Proxy-API-Management-Center';
+
+function resolvePanelRepoUrl(raw: Record<string, unknown> | undefined): string {
+  const remoteManagement = raw?.['remote-management'];
+  if (
+    !remoteManagement ||
+    typeof remoteManagement !== 'object' ||
+    Array.isArray(remoteManagement)
+  ) {
+    return DEFAULT_WEBUI_REPO_URL;
+  }
+
+  const section = remoteManagement as Record<string, unknown>;
+  const configuredUrl = section['panel-github-repository'] ?? section['panel-repo'];
+  if (typeof configuredUrl !== 'string') return DEFAULT_WEBUI_REPO_URL;
+
+  const trimmed = configuredUrl.trim();
+  return trimmed || DEFAULT_WEBUI_REPO_URL;
+}
 
 const parseVersionSegments = (version?: string | null) => {
   if (!version) return null;
@@ -94,7 +113,6 @@ export function SystemPage() {
   const [requestLogTouched, setRequestLogTouched] = useState(false);
   const [requestLogSaving, setRequestLogSaving] = useState(false);
   const [checkingVersion, setCheckingVersion] = useState(false);
-  const [panelRepoUrl, setPanelRepoUrl] = useState('');
 
   const apiKeysCache = useRef<string[]>([]);
   const versionTapCount = useRef(0);
@@ -105,6 +123,7 @@ export function SystemPage() {
     [i18n.language]
   );
   const groupedModels = useMemo(() => classifyModels(models, { otherLabel }), [models, otherLabel]);
+  const panelRepoUrl = useMemo(() => resolvePanelRepoUrl(config?.raw), [config?.raw]);
   const requestLogEnabled = config?.requestLog ?? false;
   const requestLogDirty = requestLogDraft !== requestLogEnabled;
   const canEditRequestLog = auth.connectionStatus === 'connected' && Boolean(config);
@@ -318,11 +337,9 @@ export function SystemPage() {
   }, [auth.serverVersion, showNotification, t]);
 
   useEffect(() => {
-    fetchConfig().catch(() => {});
-    configFileApi.fetchConfigYaml().then((yaml) => {
-      const match = yaml.match(/panel-github-repository:\s*["']?([^\s"']+)["']?/);
-      if (match?.[1]) setPanelRepoUrl(match[1].trim());
-    }).catch(() => {});
+    fetchConfig().catch(() => {
+      // ignore
+    });
   }, [fetchConfig]);
 
   useEffect(() => {
@@ -420,7 +437,7 @@ export function SystemPage() {
             </a>
 
             <a
-              href={panelRepoUrl || 'https://github.com/router-for-me/Cli-Proxy-API-Management-Center'}
+              href={panelRepoUrl}
               target="_blank"
               rel="noopener noreferrer"
               className={styles.linkCard}
