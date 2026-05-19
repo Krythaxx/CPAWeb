@@ -1452,8 +1452,11 @@
     "summary_output_tokens": "Output Tokens",
     "summary_cached_tokens": "Cached Tokens",
     "section_by_model": "By Model",
-    "section_by_provider": "By Provider",
+    "section_by_provider": "By Credential / Account",
     "section_by_account": "By Account / API Key",
+    "rate_good": "Good",
+    "rate_fair": "Fair",
+    "rate_poor": "Poor",
     "col_requests": "Requests",
     "col_success": "Success",
     "col_failure": "Failure",
@@ -1484,6 +1487,8 @@
     "error_connection": "Failed to connect to the usage service.",
     "error_memory_connection": "Failed to connect to CPA in-memory statistics.",
     "error_generic": "Failed to load usage statistics.",
+    "empty_table": "No data available",
+    "model_unavailable_hint": "Model-level statistics are not available in memory mode. Enable Usage Service (PostgreSQL) for full data.",
     "loading": "Loading usage statistics..."
   }
 }

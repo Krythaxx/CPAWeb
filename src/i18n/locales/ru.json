@@ -1449,8 +1449,11 @@
     "summary_output_tokens": "Выходные токены",
     "summary_cached_tokens": "Кэшированные токены",
     "section_by_model": "По моделям",
-    "section_by_provider": "По провайдерам",
+    "section_by_provider": "По учётным данным",
     "section_by_account": "По аккаунту / API Key",
+    "rate_good": "Хорошо",
+    "rate_fair": "Средне",
+    "rate_poor": "Плохо",
     "col_requests": "Запросы",
     "col_success": "Успешно",
     "col_failure": "Ошибки",
@@ -1481,6 +1484,8 @@
     "error_connection": "Не удалось подключиться к Usage сервису.",
     "error_memory_connection": "Не удалось подключиться к статистике CPA в памяти.",
     "error_generic": "Не удалось загрузить статистику использования.",
+    "empty_table": "Нет данных",
+    "model_unavailable_hint": "Статистика по моделям недоступна в режиме памяти. Включите Usage Service (PostgreSQL) для полных данных.",
     "loading": "Загрузка статистики использования..."
   }
 }

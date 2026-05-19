@@ -1452,8 +1452,11 @@
     "summary_output_tokens": "输出 Token",
     "summary_cached_tokens": "缓存 Token",
     "section_by_model": "按模型",
-    "section_by_provider": "按提供商",
+    "section_by_provider": "按凭证 / 账户",
     "section_by_account": "按账户 / API Key",
+    "rate_good": "良好",
+    "rate_fair": "一般",
+    "rate_poor": "较差",
     "col_requests": "请求数",
     "col_success": "成功",
     "col_failure": "失败",
@@ -1484,6 +1487,8 @@
     "error_connection": "无法连接到 Usage 服务。",
     "error_memory_connection": "无法连接到 CPA 内存统计。",
     "error_generic": "加载用量统计失败。",
+    "empty_table": "暂无数据",
+    "model_unavailable_hint": "内存统计模式下不支持按模型统计。请启用 Usage Service（PostgreSQL）获取完整数据。",
     "loading": "正在加载用量统计..."
   }
 }
