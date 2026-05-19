@@ -13,6 +13,7 @@ import {
   useThemeStore,
 } from '@/stores';
 import { configApi, versionApi } from '@/services/api';
+import { configFileApi } from '@/services/api/configFile';
 import { apiKeysApi } from '@/services/api/apiKeys';
 import { classifyModels } from '@/utils/models';
 import { STORAGE_KEY_AUTH } from '@/utils/constants';
@@ -93,6 +94,7 @@ export function SystemPage() {
   const [requestLogTouched, setRequestLogTouched] = useState(false);
   const [requestLogSaving, setRequestLogSaving] = useState(false);
   const [checkingVersion, setCheckingVersion] = useState(false);
+  const [panelRepoUrl, setPanelRepoUrl] = useState('');
 
   const apiKeysCache = useRef<string[]>([]);
   const versionTapCount = useRef(0);
@@ -316,9 +318,11 @@ export function SystemPage() {
   }, [auth.serverVersion, showNotification, t]);
 
   useEffect(() => {
-    fetchConfig().catch(() => {
-      // ignore
-    });
+    fetchConfig().catch(() => {});
+    configFileApi.fetchConfigYaml().then((yaml) => {
+      const match = yaml.match(/panel-github-repository:\s*["']?([^\s"']+)["']?/);
+      if (match?.[1]) setPanelRepoUrl(match[1].trim());
+    }).catch(() => {});
   }, [fetchConfig]);
 
   useEffect(() => {
@@ -416,7 +420,7 @@ export function SystemPage() {
             </a>
 
             <a
-              href="https://github.com/router-for-me/Cli-Proxy-API-Management-Center"
+              href={panelRepoUrl || 'https://github.com/router-for-me/Cli-Proxy-API-Management-Center'}
               target="_blank"
               rel="noopener noreferrer"
               className={styles.linkCard}
