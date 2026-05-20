@@ -4,7 +4,10 @@ import type {
   UsageStatsResponse,
   DashboardTimeRange,
 } from '@/types/usageStats';
-import type { ApiKeyUsageResponse } from '@/utils/recentRequests';
+import {
+  normalizeUsageTotal,
+  type ApiKeyUsageResponse,
+} from '@/utils/recentRequests';
 
 const USAGE_SERVICE_TIMEOUT_MS = 3 * 1000;
 
@@ -70,14 +73,9 @@ export function normalizeMemoryStats(
     let providerFailure = 0;
 
     for (const [authKey, entry] of Object.entries(keyEntries)) {
-      const s =
-        typeof (entry as Record<string, unknown>)?.success === 'number'
-          ? ((entry as Record<string, unknown>).success as number)
-          : Number((entry as Record<string, unknown>)?.success ?? 0) || 0;
-      const f =
-        typeof (entry as Record<string, unknown>)?.failed === 'number'
-          ? ((entry as Record<string, unknown>).failed as number)
-          : Number((entry as Record<string, unknown>)?.failed ?? 0) || 0;
+      const rec = entry as Record<string, unknown> | null | undefined;
+      const s = normalizeUsageTotal(rec?.success);
+      const f = normalizeUsageTotal(rec?.failed);
       providerSuccess += s;
       providerFailure += f;
 
