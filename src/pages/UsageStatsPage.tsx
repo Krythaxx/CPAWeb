@@ -27,7 +27,7 @@ export function UsageStatsPage() {
   const { t } = useTranslation();
   const dashboard = useUsageDashboard();
   const { table: priceTable, updateEntry, removeEntry, clearAll } = usePriceTable();
-  const [autoRefreshInterval, setAutoRefreshInterval] = useState(0);
+  const [autoRefreshInterval, setAutoRefreshInterval] = useState(10);
   const [priceModalOpen, setPriceModalOpen] = useState(false);
 
   const autoRefresh = useAutoRefresh(() => {
@@ -52,8 +52,8 @@ export function UsageStatsPage() {
   }, [dashboard.range, dashboard.serviceUrl]);
 
   const handleRefresh = useCallback(() => {
-    dashboard.refresh();
-    dashboard.refreshHeatmap();
+    void dashboard.refresh();
+    void dashboard.refreshHeatmap();
     autoRefresh.reset();
   }, [dashboard, autoRefresh]);
 
