@@ -133,7 +133,9 @@ export function useUsageDashboard() {
       const rawMemory = await usageStatsApi.fetchMemoryStats();
       if (ac.signal.aborted) return;
 
+      console.log('[UsageDashboard] rawMemory:', JSON.stringify(rawMemory));
       const normalized = normalizeMemoryStats(rawMemory);
+      console.log('[UsageDashboard] normalized:', JSON.stringify(normalized));
 
       if (
         usageStatisticsEnabled === false &&

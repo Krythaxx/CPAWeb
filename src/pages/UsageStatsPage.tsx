@@ -19,6 +19,10 @@ function formatNumber(n: number): string {
   return n.toLocaleString();
 }
 
+function formatPercent(rate: number): string {
+  return `${(rate * 100).toFixed(1)}%`;
+}
+
 export function UsageStatsPage() {
   const { t } = useTranslation();
   const dashboard = useUsageDashboard();
@@ -55,19 +59,27 @@ export function UsageStatsPage() {
 
   const s = dashboard.data?.summary;
   const isMemory = dashboard.dataSource === 'memory';
-  const showTokenColumns = !isMemory;
-
-  const tokenCost = s && showTokenColumns
-    ? calculateCost(
-        s.inputTokens,
-        s.outputTokens,
-        priceTable.length > 0 ? { model: '__total__', inputPricePerM: priceTable.reduce((a, p) => a + p.inputPricePerM, 0) / priceTable.length, outputPricePerM: priceTable.reduce((a, p) => a + p.outputPricePerM, 0) / priceTable.length } : undefined,
-      )
-    : null;
+  const isUnavailable = dashboard.dataSource === 'unavailable';
+  const isError = dashboard.dataSource === 'error';
+  const showTokenColumns = !isMemory && !isUnavailable && !isError;
 
   const cacheRate = s && s.inputTokens + s.outputTokens > 0
     ? s.cachedTokens / (s.inputTokens + s.outputTokens)
     : 0;
+
+  const renderSourceBadge = () => {
+    if (dashboard.loading && !dashboard.data) return null;
+    if (isMemory) {
+      return <span className={`${styles.sourceBadge} ${styles.sourceBadgeMemory}`}>{t('usage_stats.source_memory')}</span>;
+    }
+    if (isUnavailable) {
+      return <span className={`${styles.sourceBadge} ${styles.sourceBadgeUnavailable}`}>{t('usage_stats.source_unavailable')}</span>;
+    }
+    if (isError) {
+      return <span className={`${styles.sourceBadge} ${styles.sourceBadgeError}`}>Error</span>;
+    }
+    return <span className={`${styles.sourceBadge} ${styles.sourceBadgePostgres}`}>{t('usage_stats.source_postgres')}</span>;
+  };
 
   return (
     <div className={styles.container}>
@@ -82,12 +94,18 @@ export function UsageStatsPage() {
         onOpenPriceManager={() => setPriceModalOpen(true)}
       />
 
+      {renderSourceBadge()}
+
       {dashboard.loading && !dashboard.data && (
         <div className={styles.loadingBox}>{t('usage_stats.loading')}</div>
       )}
 
       {dashboard.error && !dashboard.loading && !dashboard.data && (
         <div className={styles.errorBox}>{dashboard.error}</div>
+      )}
+
+      {!dashboard.loading && !dashboard.error && !dashboard.data && isUnavailable && (
+        <div className={styles.emptyBox}>{t('usage_stats.empty_memory_disabled')}</div>
       )}
 
       {dashboard.data && (
@@ -104,7 +122,7 @@ export function UsageStatsPage() {
             <MetricCard
               title={t('usage_dashboard.total_token')}
               value={s ? formatNumber(s.totalTokens) : '-'}
-              subtitle={tokenCost !== null ? formatCost(tokenCost) : undefined}
+              subtitle={showTokenColumns && s && s.totalTokens > 0 ? formatCost(calculateCost(s.inputTokens, s.outputTokens, undefined)) : undefined}
               trend={s?.tokenTrend}
               trendColor="#3b82f6"
             />
@@ -112,9 +130,11 @@ export function UsageStatsPage() {
               title={t('usage_dashboard.input_output')}
               value={s ? `${formatNumber(s.inputTokens)} / ${formatNumber(s.outputTokens)}` : '-'}
               subtitle={
-                s
+                s && showTokenColumns
                   ? `${t('usage_dashboard.cached')}: ${formatNumber(s.cachedTokens)} · ${t('usage_dashboard.cache_hit')}: ${(cacheRate * 100).toFixed(1)}%`
-                  : undefined
+                  : isMemory && s
+                    ? t('usage_stats.token_unavailable')
+                    : undefined
               }
               trend={s?.inputOutputTrend}
               trendColor="#3b82f6"
@@ -122,18 +142,31 @@ export function UsageStatsPage() {
               secondaryColor="#10b981"
             />
             <MetricCard
-              title="RPM"
-              value={s ? (s.totalRequests > 0 ? formatNumber(Math.round(s.totalRequests / 60)) : '0') : '-'}
+              title={t('usage_stats.summary_total_requests')}
+              value={s ? formatNumber(s.totalRequests) : '-'}
+              subtitle={
+                s
+                  ? `${t('usage_stats.col_success')}: ${formatNumber(s.successCount)} · ${t('usage_stats.col_failure')}: ${formatNumber(s.failureCount)} · ${t('usage_stats.col_success_rate')}: ${formatPercent(s.successRate)}`
+                  : undefined
+              }
               trend={s?.requestTrend}
               trendColor="#f97316"
             />
             <MetricCard
-              title="TPM"
-              value={s ? formatNumber(s.totalTokens) : '-'}
-              trend={s?.tokenTrend}
+              title={t('usage_stats.summary_success_rate')}
+              value={s ? formatPercent(s.successRate) : '-'}
+              subtitle={
+                s
+                  ? s.successRate >= 0.95 ? t('usage_stats.rate_good') : s.successRate >= 0.8 ? t('usage_stats.rate_fair') : t('usage_stats.rate_poor')
+                  : undefined
+              }
               trendColor="#8b5cf6"
             />
           </div>
+
+          {isMemory && (
+            <div className={styles.memoryHint}>{t('usage_stats.model_unavailable_hint')}</div>
+          )}
 
           <div className={styles.tablesGrid}>
             <ApiKeyTable

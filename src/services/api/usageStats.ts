@@ -6,7 +6,7 @@ import type {
 } from '@/types/usageStats';
 import type { ApiKeyUsageResponse } from '@/utils/recentRequests';
 
-const USAGE_SERVICE_TIMEOUT_MS = 10 * 1000;
+const USAGE_SERVICE_TIMEOUT_MS = 3 * 1000;
 
 function resolveServiceUrl(serviceUrl: string): string {
   let base = serviceUrl.trim().replace(/\/+$/, '');
