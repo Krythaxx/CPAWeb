@@ -8,8 +8,7 @@ import { ApiKeyHeatmap } from '@/features/usageDashboard/components/ApiKeyHeatma
 import { MetricCard } from '@/features/usageDashboard/components/MetricCard';
 import { ApiKeyTable } from '@/features/usageDashboard/components/ApiKeyTable';
 import { ModelTable } from '@/features/usageDashboard/components/ModelTable';
-import { ProviderTable } from '@/features/usageDashboard/components/ProviderTable';
-import { AuthFileTable } from '@/features/usageDashboard/components/AuthFileTable';
+import { SourceTable } from '@/features/usageDashboard/components/SourceTable';
 import { PriceManagerModal } from '@/features/usageDashboard/components/PriceManagerModal';
 import { calculateCost, formatCost } from '@/features/usageDashboard/utils/priceCalculator';
 import styles from './UsageStatsPage.module.scss';
@@ -145,13 +144,8 @@ export function UsageStatsPage() {
             />
           </div>
 
-          <AuthFileTable
-            rows={dashboard.authFileRows}
-            priceTable={priceTable}
-          />
-
-          <ProviderTable
-            rows={dashboard.providerRows}
+          <SourceTable
+            rows={dashboard.sourceRows}
             priceTable={priceTable}
           />
         </>

@@ -21,6 +21,7 @@ import type {
   ApiKeyDisplayRow,
   AuthFileDisplayRow,
   ProviderDisplayRow,
+  SourceDisplayRow,
 } from '@/types/usageStats';
 import {
   normalizeRecentRequestBuckets,
@@ -528,6 +529,21 @@ export function useUsageDashboard() {
       });
   }, [data]);
 
+  const sourceRows = useMemo<SourceDisplayRow[]>(() => {
+    const auths = authFileRows.map((r) => ({
+      ...r,
+      key: `auth:${r.key}`,
+      sourceType: 'auth-file' as const,
+    }));
+    const provs = providerRows.map((r) => ({
+      ...r,
+      key: `prov:${r.key}`,
+      sourceType: 'provider' as const,
+      provider: '',
+    }));
+    return [...auths, ...provs].sort((a, b) => b.requests - a.requests);
+  }, [authFileRows, providerRows]);
+
   return {
     loading,
     dataSource,
@@ -546,5 +562,6 @@ export function useUsageDashboard() {
     apiKeyRows,
     authFileRows,
     providerRows,
+    sourceRows,
   };
 }

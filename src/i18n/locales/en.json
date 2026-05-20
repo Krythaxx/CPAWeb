@@ -1528,6 +1528,9 @@
     "rpm": "RPM",
     "tpm": "TPM",
     "requests_per_minute": "Requests per minute",
-    "tokens_per_minute": "Tokens per minute"
+    "tokens_per_minute": "Tokens per minute",
+    "source_usage": "Source Usage",
+    "col_source": "Source",
+    "col_type": "Type"
   }
 }

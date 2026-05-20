@@ -136,3 +136,17 @@ export interface AuthFileDisplayRow {
   cost: number | null;
   childModels: UsageStatsGroupRow[];
 }
+
+export interface SourceDisplayRow {
+  key: string;
+  label: string;
+  sourceType: 'auth-file' | 'provider';
+  provider: string;
+  requests: number;
+  successCount: number;
+  failureCount: number;
+  totalTokens: number;
+  modelCount: number;
+  cost: number | null;
+  childModels: UsageStatsGroupRow[];
+}

@@ -87,9 +87,36 @@
   line-height: 1;
 }
 
-.keyCell {
-  font-family: monospace;
+.nameCell {
   font-size: 12px;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.typeBadge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.typeAuthFile {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.typeProvider {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.providerCell {
+  font-size: 11px;
+  color: var(--text-secondary, #6b7280);
 }
 
 .requestCell {
