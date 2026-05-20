@@ -94,8 +94,6 @@ export function UsageStatsPage() {
         onOpenPriceManager={() => setPriceModalOpen(true)}
       />
 
-      {renderSourceBadge()}
-
       {dashboard.loading && !dashboard.data && (
         <div className={styles.loadingBox}>{t('usage_stats.loading')}</div>
       )}
@@ -163,10 +161,6 @@ export function UsageStatsPage() {
               trendColor="#8b5cf6"
             />
           </div>
-
-          {isMemory && (
-            <div className={styles.memoryHint}>{t('usage_stats.model_unavailable_hint')}</div>
-          )}
 
           <div className={styles.tablesGrid}>
             <ApiKeyTable
