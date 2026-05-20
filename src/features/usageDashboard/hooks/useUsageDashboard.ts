@@ -219,7 +219,8 @@ function buildHeatmapBuckets(buckets: RecentRequestBucket[]): HeatmapBucket[] {
   const now = Date.now();
   const duration = 30 * 60 * 1000;
   return normalized.map((b, i) => {
-    const ts = b.time ? new Date(b.time).getTime() : now - (normalized.length - i) * duration;
+    const parsed = b.time ? new Date(b.time).getTime() : NaN;
+    const ts = Number.isFinite(parsed) ? parsed : now - (normalized.length - i) * duration;
     return {
       timeStart: ts,
       timeEnd: ts + duration,
@@ -429,10 +430,10 @@ export function useUsageDashboard() {
     if (totalReqs === 0) return '-';
     const covered = deriveCoveredMinutesFromBuckets(
       heatmapBuckets.map((b) => ({
-        time: new Date(b.timeStart).toISOString(),
+        time: Number.isFinite(b.timeStart) ? new Date(b.timeStart).toISOString() : '',
         success: b.success,
         failed: b.failed,
-      })),
+      })).filter((b) => b.time !== ''),
     );
     if (!covered || covered <= 0) return '-';
     return (totalReqs / covered).toFixed(1);
@@ -442,10 +443,10 @@ export function useUsageDashboard() {
     if (heatmapBuckets.length === 0 || !data || data.summary.totalTokens <= 0) return '-';
     const covered = deriveCoveredMinutesFromBuckets(
       heatmapBuckets.map((b) => ({
-        time: new Date(b.timeStart).toISOString(),
+        time: Number.isFinite(b.timeStart) ? new Date(b.timeStart).toISOString() : '',
         success: b.success,
         failed: b.failed,
-      })),
+      })).filter((b) => b.time !== ''),
     );
     if (!covered || covered <= 0) return '-';
     return (data.summary.totalTokens / covered).toFixed(1);
