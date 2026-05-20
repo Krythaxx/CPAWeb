@@ -25,6 +25,8 @@ import type {
 } from '@/types/usageStats';
 import {
   normalizeRecentRequestBuckets,
+  mergeRecentRequestBucketGroups,
+  RECENT_REQUEST_BLOCK_DURATION_MS,
   type RecentRequestBucket,
 } from '@/utils/recentRequests';
 
@@ -218,7 +220,7 @@ async function buildApiKeyHashMap(configuredApiKeys: string[] | undefined): Prom
 function buildHeatmapBuckets(buckets: RecentRequestBucket[]): HeatmapBucket[] {
   const normalized = normalizeRecentRequestBuckets(buckets);
   const now = Date.now();
-  const duration = 30 * 60 * 1000;
+  const duration = RECENT_REQUEST_BLOCK_DURATION_MS;
   return normalized.map((b, i) => {
     const parsed = b.time ? new Date(b.time).getTime() : NaN;
     const ts = Number.isFinite(parsed) ? parsed : now - (normalized.length - i) * duration;
@@ -230,6 +232,44 @@ function buildHeatmapBuckets(buckets: RecentRequestBucket[]): HeatmapBucket[] {
       successRate: b.success + b.failed > 0 ? b.success / (b.success + b.failed) : 0,
     };
   });
+}
+
+function buildMergedBucketsFromRaw(raw: unknown): RecentRequestBucket[] {
+  const payload = raw as { apiKeyUsage?: Record<string, Record<string, unknown>>; authFiles?: unknown[] };
+  const groups: RecentRequestBucket[][] = [];
+
+  if (payload?.apiKeyUsage && typeof payload.apiKeyUsage === 'object') {
+    Object.values(payload.apiKeyUsage).forEach((providerEntries) => {
+      if (!providerEntries || typeof providerEntries !== 'object') return;
+      Object.values(providerEntries).forEach((entry) => {
+        if (!entry || typeof entry !== 'object') return;
+        const record = entry as Record<string, unknown>;
+        const recentKeys = ['recent_requests', 'recentRequests'];
+        for (const rk of recentKeys) {
+          if (Array.isArray(record[rk])) {
+            groups.push(normalizeRecentRequestBuckets(record[rk]));
+            return;
+          }
+        }
+      });
+    });
+  }
+
+  if (Array.isArray(payload?.authFiles)) {
+    payload.authFiles.forEach((file) => {
+      if (!file || typeof file !== 'object') return;
+      const record = file as Record<string, unknown>;
+      const recentKeys = ['recent_requests', 'recentRequests'];
+      for (const rk of recentKeys) {
+        if (Array.isArray(record[rk])) {
+          groups.push(normalizeRecentRequestBuckets(record[rk]));
+          return;
+        }
+      }
+    });
+  }
+
+  return mergeRecentRequestBucketGroups(groups);
 }
 
 export function useUsageDashboard() {
@@ -248,6 +288,7 @@ export function useUsageDashboard() {
   const [serviceUrl, setServiceUrlState] = useState(() => loadServiceUrl(apiBase));
   const [lastRefreshTime, setLastRefreshTime] = useState<string | null>(null);
   const [heatmapBuckets, setHeatmapBuckets] = useState<HeatmapBucket[]>([]);
+  const [mergedRecentBuckets, setMergedRecentBuckets] = useState<RecentRequestBucket[]>([]);
 
   const abortRef = useRef<AbortController | null>(null);
   const memoryUsageDetailsRef = useRef<MemoryRequestLogDetail[]>(
@@ -301,6 +342,8 @@ export function useUsageDashboard() {
     try {
       const rawMemory = await usageStatsApi.fetchMemoryStats();
       if (ac.signal.aborted) return;
+
+      setMergedRecentBuckets(buildMergedBucketsFromRaw(rawMemory));
 
       const configuredApiKeys = useConfigStore.getState().config?.apiKeys as string[] | undefined;
       const hashMap = await buildApiKeyHashMap(configuredApiKeys);
@@ -395,7 +438,9 @@ export function useUsageDashboard() {
     if (!managementKey) return;
     try {
       const raw = await usageStatsApi.fetchMemoryStats();
-      setHeatmapBuckets(buildHeatmapBuckets(collectMemoryStatsBuckets(raw)));
+      const allBuckets = collectMemoryStatsBuckets(raw);
+      setHeatmapBuckets(buildHeatmapBuckets(allBuckets));
+      setMergedRecentBuckets(buildMergedBucketsFromRaw(raw));
     } catch {
       setHeatmapBuckets([]);
     }
@@ -408,53 +453,42 @@ export function useUsageDashboard() {
   }, []);
 
   const rpmValue = useMemo<string>(() => {
-    if (!data) return '-';
+    if (!data) {
+      if (mergedRecentBuckets.length === 0) return '-';
+      const totalReqs = mergedRecentBuckets.reduce((t, b) => t + b.success + b.failed, 0);
+      if (totalReqs === 0) return '-';
+      const covered = deriveCoveredMinutesFromBuckets(mergedRecentBuckets);
+      if (!covered || covered <= 0) return '-';
+      return (totalReqs / covered).toFixed(1);
+    }
     const covered = deriveCoveredMinutes(data);
     if (covered !== null && covered > 0) {
       return (data.summary.totalRequests / covered).toFixed(1);
     }
+    if (mergedRecentBuckets.length > 0) {
+      const totalReqs = mergedRecentBuckets.reduce((t, b) => t + b.success + b.failed, 0);
+      if (totalReqs > 0) {
+        const bucketCovered = deriveCoveredMinutesFromBuckets(mergedRecentBuckets);
+        if (bucketCovered && bucketCovered > 0) {
+          return (totalReqs / bucketCovered).toFixed(1);
+        }
+      }
+    }
     return '-';
-  }, [data]);
+  }, [data, mergedRecentBuckets]);
 
   const tpmValue = useMemo<string>(() => {
     if (!data) return '-';
+    if (data.summary.totalTokens <= 0) return '-';
     const covered = deriveCoveredMinutes(data);
-    if (covered !== null && covered > 0 && data.summary.totalTokens > 0) {
+    if (covered !== null && covered > 0) {
       return (data.summary.totalTokens / covered).toFixed(1);
     }
     return '-';
   }, [data]);
 
-  const rpmFromBuckets = useMemo<string>(() => {
-    if (heatmapBuckets.length === 0) return '-';
-    const totalReqs = heatmapBuckets.reduce((t, b) => t + b.success + b.failed, 0);
-    if (totalReqs === 0) return '-';
-    const covered = deriveCoveredMinutesFromBuckets(
-      heatmapBuckets.map((b) => ({
-        time: Number.isFinite(b.timeStart) ? new Date(b.timeStart).toISOString() : '',
-        success: b.success,
-        failed: b.failed,
-      })).filter((b) => b.time !== ''),
-    );
-    if (!covered || covered <= 0) return '-';
-    return (totalReqs / covered).toFixed(1);
-  }, [heatmapBuckets]);
-
-  const tpmFromBuckets = useMemo<string>(() => {
-    if (heatmapBuckets.length === 0 || !data || data.summary.totalTokens <= 0) return '-';
-    const covered = deriveCoveredMinutesFromBuckets(
-      heatmapBuckets.map((b) => ({
-        time: Number.isFinite(b.timeStart) ? new Date(b.timeStart).toISOString() : '',
-        success: b.success,
-        failed: b.failed,
-      })).filter((b) => b.time !== ''),
-    );
-    if (!covered || covered <= 0) return '-';
-    return (data.summary.totalTokens / covered).toFixed(1);
-  }, [heatmapBuckets, data]);
-
-  const displayRpm = data && rpmValue !== '-' ? rpmValue : rpmFromBuckets;
-  const displayTpm = data && tpmValue !== '-' ? tpmValue : tpmFromBuckets;
+  const displayRpm = rpmValue;
+  const displayTpm = tpmValue;
 
   const apiKeyRows = useMemo<ApiKeyDisplayRow[]>(() => {
     if (!data) return [];

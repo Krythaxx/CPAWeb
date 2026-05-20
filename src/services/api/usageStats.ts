@@ -11,6 +11,7 @@ import {
   normalizeRecentRequestBuckets,
   normalizeUsageTotal,
   sumRecentRequests,
+  RECENT_REQUEST_BUCKET_DURATION_MINUTES,
   type ApiKeyUsageResponse,
   type RecentRequestBucket,
 } from '@/utils/recentRequests';
@@ -1039,7 +1040,7 @@ function resolveApiKeyIdentity(
   if (trimmedKey) {
     return {
       identity: trimmedKey,
-      label: `key: ${trimmedKey.slice(0, 8)}...`,
+      label: trimmedKey,
     };
   }
 
@@ -1510,8 +1511,6 @@ export function augmentMemoryStatsWithRequestLogs(
   };
 }
 
-const RECENT_REQUEST_BUCKET_DURATION_MINUTES = 10;
-
 export function deriveCoveredMinutesFromBuckets(
   buckets: RecentRequestBucket[],
 ): number | null {
@@ -1526,6 +1525,10 @@ export function deriveCoveredMinutesFromBuckets(
     if (spanMs > 0) {
       return Math.max(1, Math.round((spanMs / 60000) + RECENT_REQUEST_BUCKET_DURATION_MINUTES));
     }
+  }
+
+  if (timestamped.length === 1) {
+    return RECENT_REQUEST_BUCKET_DURATION_MINUTES;
   }
 
   return buckets.length * RECENT_REQUEST_BUCKET_DURATION_MINUTES;

@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { HeatmapBucket } from '@/types/usageStats';
+import { RECENT_REQUEST_BLOCK_DURATION_MS } from '@/utils/recentRequests';
 import styles from './ApiKeyHeatmap.module.scss';
 
 interface ApiKeyHeatmapProps {
@@ -49,7 +50,9 @@ export function ApiKeyHeatmap({
   buckets,
 }: ApiKeyHeatmapProps) {
   const { t } = useTranslation();
+  const cardRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
+  const tooltipRef = useRef<HTMLDivElement>(null);
   const [colCount, setColCount] = useState(DEFAULT_COLS);
   const [tooltip, setTooltip] = useState<{
     x: number;
@@ -75,7 +78,7 @@ export function ApiKeyHeatmap({
   }, []);
 
   const displayBuckets = useMemo(() => {
-    const duration = 30 * 60 * 1000;
+    const duration = RECENT_REQUEST_BLOCK_DURATION_MS;
     const timelineEnd =
       buckets.length > 0
         ? buckets[buckets.length - 1].timeEnd + Math.max(0, colCount - buckets.length) * duration
@@ -104,14 +107,35 @@ export function ApiKeyHeatmap({
 
   const handleMouseEnter = useCallback(
     (e: React.MouseEvent, bucket: HeatmapBucket, isIdle: boolean) => {
-      const rect = gridRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      setTooltip({
-        x: e.clientX - rect.left,
-        y: e.clientY - rect.top,
-        bucket,
-        isIdle,
-      });
+      const cardRect = cardRef.current?.getBoundingClientRect();
+      const gridRect = gridRef.current?.getBoundingClientRect();
+      if (!cardRect || !gridRect) return;
+
+      const dotX = e.clientX - gridRect.left;
+      const dotY = e.clientY - gridRect.top;
+      const tooltipOffset = 12;
+      const tooltipWidth = tooltipRef.current?.offsetWidth ?? 180;
+      const tooltipHeight = tooltipRef.current?.offsetHeight ?? 60;
+
+      let x = dotX - tooltipWidth / 2;
+      let y = dotY + tooltipOffset;
+
+      const cardLeft = gridRect.left - cardRect.left;
+      const cardRight = cardRect.width;
+
+      if (x < cardLeft) x = cardLeft;
+      if (x + tooltipWidth > cardRight) x = cardRight - tooltipWidth;
+
+      const gridBottomInCard = gridRect.top - cardRect.top + gridRect.height;
+      if (y + tooltipHeight > gridBottomInCard + 8) {
+        if (dotY - tooltipOffset - tooltipHeight >= -(DOT_SIZE + GAP)) {
+          y = dotY - tooltipOffset - tooltipHeight;
+        } else {
+          y = Math.max(0, gridBottomInCard + 8 - tooltipHeight);
+        }
+      }
+
+      setTooltip({ x, y, bucket, isIdle });
     },
     [],
   );
@@ -123,7 +147,7 @@ export function ApiKeyHeatmap({
   const successWidth = totalRequests > 0 ? (successCount / totalRequests) * 100 : 100;
 
   return (
-    <div className={styles.card}>
+    <div className={styles.card} ref={cardRef}>
       <div className={styles.cardHeader}>
         <div className={styles.cardTitleRow}>
           <span className={styles.cardTitle}>{t('usage_dashboard.api_key_overview')}</span>
@@ -163,8 +187,9 @@ export function ApiKeyHeatmap({
       </div>
       {tooltip && (
         <div
+          ref={tooltipRef}
           className={styles.tooltip}
-          style={{ left: tooltip.x, top: tooltip.y - 70 }}
+          style={{ left: tooltip.x, top: tooltip.y }}
         >
           {tooltip.isIdle ? (
             <div>{t('usage_dashboard.no_requests')}</div>
