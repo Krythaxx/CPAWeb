@@ -61,6 +61,26 @@ export function normalizeUsageTotal(value: unknown): number {
     const numberValue = Number(trimmed);
     return Number.isFinite(numberValue) ? numberValue : 0;
   }
+  if (Array.isArray(value)) {
+    return value.reduce<number>((total, item) => total + normalizeUsageTotal(item), 0);
+  }
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    const directTotal =
+      record.total ??
+      record.count ??
+      record.requests ??
+      record.value;
+    const directTotalNumber = normalizeUsageTotal(directTotal);
+    if (directTotalNumber > 0) {
+      return directTotalNumber;
+    }
+
+    return Object.values(record).reduce<number>(
+      (total, item) => total + normalizeUsageTotal(item),
+      0
+    );
+  }
   return 0;
 }
 

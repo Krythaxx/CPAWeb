@@ -14,6 +14,7 @@ interface ApiKeyHeatmapProps {
 const DOT_SIZE = 10;
 const GAP = 4;
 const DEFAULT_COLS = 80;
+const HEATMAP_IDLE_REFERENCE_TIME = Date.now();
 
 function formatNumber(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -74,11 +75,14 @@ export function ApiKeyHeatmap({
   }, []);
 
   const displayBuckets = useMemo(() => {
-    const now = Date.now();
     const duration = 30 * 60 * 1000;
+    const timelineEnd =
+      buckets.length > 0
+        ? buckets[buckets.length - 1].timeEnd + Math.max(0, colCount - buckets.length) * duration
+        : HEATMAP_IDLE_REFERENCE_TIME;
     const idleBucket = (i: number): HeatmapBucket => ({
-      timeStart: now - (colCount - i) * duration,
-      timeEnd: now - (colCount - i - 1) * duration,
+      timeStart: timelineEnd - (colCount - i) * duration,
+      timeEnd: timelineEnd - (colCount - i - 1) * duration,
       success: 0,
       failed: 0,
       successRate: 0,

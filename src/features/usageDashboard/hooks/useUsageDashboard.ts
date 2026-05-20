@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore, useConfigStore } from '@/stores';
-import { usageStatsApi, normalizeMemoryStats } from '@/services/api/usageStats';
+import {
+  usageStatsApi,
+  collectMemoryStatsBuckets,
+  normalizeMemoryStats,
+} from '@/services/api/usageStats';
 import { normalizeApiBase } from '@/utils/connection';
 import type {
   UsageStatsDataSource,
@@ -138,15 +142,11 @@ export function useUsageDashboard() {
       const rawMemory = await usageStatsApi.fetchMemoryStats();
       if (ac.signal.aborted) return;
 
-      console.log('[UsageDashboard] rawMemory:', JSON.stringify(rawMemory));
       const normalized = normalizeMemoryStats(rawMemory);
-      console.log('[UsageDashboard] normalized:', JSON.stringify(normalized));
 
       if (
         usageStatisticsEnabled === false &&
-        normalized.summary.totalRequests === 0 &&
-        normalized.byProvider.length === 0 &&
-        normalized.byAccount.length === 0
+        normalized.summary.totalRequests === 0
       ) {
         setDataSource('unavailable');
         setData(null);
@@ -177,20 +177,7 @@ export function useUsageDashboard() {
     if (!managementKey) return;
     try {
       const raw = await usageStatsApi.fetchMemoryStats();
-      const allBuckets: RecentRequestBucket[] = [];
-      if (raw && typeof raw === 'object') {
-        for (const providerEntries of Object.values(raw)) {
-          if (!providerEntries || typeof providerEntries !== 'object') continue;
-          for (const entry of Object.values(providerEntries)) {
-            const rec = entry as Record<string, unknown>;
-            const buckets = rec?.recent_requests ?? rec?.recentRequests;
-            if (Array.isArray(buckets)) {
-              allBuckets.push(...normalizeRecentRequestBuckets(buckets));
-            }
-          }
-        }
-      }
-      setHeatmapBuckets(buildHeatmapBuckets(allBuckets));
+      setHeatmapBuckets(buildHeatmapBuckets(collectMemoryStatsBuckets(raw)));
     } catch {
       setHeatmapBuckets([]);
     }
