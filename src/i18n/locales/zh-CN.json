@@ -1507,6 +1507,7 @@
     "cached": "缓存",
     "cache_hit": "命中",
     "api_key_usage": "各 API Key 用量",
+    "provider_usage": "各提供商用量",
     "click_expand_hint": "点击行展开模型详情",
     "model_count": "模型数",
     "cost": "花费",

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { HeatmapBucket } from '@/types/usageStats';
 import styles from './ApiKeyHeatmap.module.scss';
@@ -10,6 +10,10 @@ interface ApiKeyHeatmapProps {
   failureCount: number;
   buckets: HeatmapBucket[];
 }
+
+const DOT_SIZE = 10;
+const GAP = 4;
+const DEFAULT_COLS = 80;
 
 function formatNumber(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -44,21 +48,65 @@ export function ApiKeyHeatmap({
   buckets,
 }: ApiKeyHeatmapProps) {
   const { t } = useTranslation();
+  const gridRef = useRef<HTMLDivElement>(null);
+  const [colCount, setColCount] = useState(DEFAULT_COLS);
   const [tooltip, setTooltip] = useState<{
     x: number;
     y: number;
     bucket: HeatmapBucket;
+    isIdle: boolean;
   } | null>(null);
 
+  useEffect(() => {
+    const el = gridRef.current;
+    if (!el) return;
+
+    const measure = () => {
+      const width = el.clientWidth;
+      const cols = Math.floor(width / (DOT_SIZE + GAP));
+      setColCount(Math.max(cols, 20));
+    };
+
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const displayBuckets = useMemo(() => {
+    const now = Date.now();
+    const duration = 30 * 60 * 1000;
+    const idleBucket = (i: number): HeatmapBucket => ({
+      timeStart: now - (colCount - i) * duration,
+      timeEnd: now - (colCount - i - 1) * duration,
+      success: 0,
+      failed: 0,
+      successRate: 0,
+    });
+
+    if (buckets.length === 0) {
+      return Array.from({ length: colCount }, (_, i) => idleBucket(i));
+    }
+
+    if (buckets.length < colCount) {
+      const padding = Array.from({ length: colCount - buckets.length }, (_, i) =>
+        idleBucket(buckets.length + i),
+      );
+      return [...buckets, ...padding];
+    }
+
+    return buckets.slice(-colCount);
+  }, [buckets, colCount]);
+
   const handleMouseEnter = useCallback(
-    (e: React.MouseEvent, bucket: HeatmapBucket) => {
-      const rect = (e.currentTarget as HTMLElement).closest(`.${styles.grid}`)
-        ?.getBoundingClientRect();
+    (e: React.MouseEvent, bucket: HeatmapBucket, isIdle: boolean) => {
+      const rect = gridRef.current?.getBoundingClientRect();
       if (!rect) return;
       setTooltip({
         x: e.clientX - rect.left,
         y: e.clientY - rect.top,
         bucket,
+        isIdle,
       });
     },
     [],
@@ -94,41 +142,45 @@ export function ApiKeyHeatmap({
           </span>
         </div>
       </div>
-      <div className={styles.grid}>
-        {buckets.map((bucket, i) => {
+      <div className={styles.grid} ref={gridRef}>
+        {displayBuckets.map((bucket, i) => {
           const total = bucket.success + bucket.failed;
+          const isIdle = total === 0 && i >= buckets.length;
           return (
             <div
               key={i}
               className={styles.dot}
               style={{ backgroundColor: dotColor(bucket.successRate, total) }}
-              onMouseEnter={(e) => handleMouseEnter(e, bucket)}
+              onMouseEnter={(e) => handleMouseEnter(e, bucket, isIdle)}
               onMouseLeave={handleMouseLeave}
             />
           );
         })}
-        {buckets.length === 0 && (
-          <div className={styles.emptyHint}>{t('usage_dashboard.no_requests')}</div>
-        )}
       </div>
       {tooltip && (
         <div
           className={styles.tooltip}
-          style={{ left: tooltip.x, top: tooltip.y - 60 }}
+          style={{ left: tooltip.x, top: tooltip.y - 70 }}
         >
-          <div className={styles.tooltipTime}>
-            {formatTimeRange(tooltip.bucket.timeStart, tooltip.bucket.timeEnd)}
-          </div>
-          <div>
-            {t('usage_stats.col_success')}: {tooltip.bucket.success}
-          </div>
-          <div>
-            {t('usage_stats.col_failure')}: {tooltip.bucket.failed}
-          </div>
-          <div>
-            {t('usage_stats.col_success_rate')}:{' '}
-            {formatPercent(tooltip.bucket.successRate)}
-          </div>
+          {tooltip.isIdle ? (
+            <div>{t('usage_dashboard.no_requests')}</div>
+          ) : (
+            <>
+              <div className={styles.tooltipTime}>
+                {formatTimeRange(tooltip.bucket.timeStart, tooltip.bucket.timeEnd)}
+              </div>
+              <div>
+                {t('usage_stats.col_success')}: {tooltip.bucket.success}
+              </div>
+              <div>
+                {t('usage_stats.col_failure')}: {tooltip.bucket.failed}
+              </div>
+              <div>
+                {t('usage_stats.col_success_rate')}:{' '}
+                {formatPercent(tooltip.bucket.successRate)}
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>

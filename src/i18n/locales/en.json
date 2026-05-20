@@ -1507,6 +1507,7 @@
     "cached": "Cached",
     "cache_hit": "Hit",
     "api_key_usage": "API Key Usage",
+    "provider_usage": "Provider Usage",
     "click_expand_hint": "Click row to expand model details",
     "model_count": "Models",
     "cost": "Cost",

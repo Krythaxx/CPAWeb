@@ -59,27 +59,11 @@ export function UsageStatsPage() {
 
   const s = dashboard.data?.summary;
   const isMemory = dashboard.dataSource === 'memory';
-  const isUnavailable = dashboard.dataSource === 'unavailable';
-  const isError = dashboard.dataSource === 'error';
-  const showTokenColumns = !isMemory && !isUnavailable && !isError;
+  const showTokenColumns = !isMemory;
 
   const cacheRate = s && s.inputTokens + s.outputTokens > 0
     ? s.cachedTokens / (s.inputTokens + s.outputTokens)
     : 0;
-
-  const renderSourceBadge = () => {
-    if (dashboard.loading && !dashboard.data) return null;
-    if (isMemory) {
-      return <span className={`${styles.sourceBadge} ${styles.sourceBadgeMemory}`}>{t('usage_stats.source_memory')}</span>;
-    }
-    if (isUnavailable) {
-      return <span className={`${styles.sourceBadge} ${styles.sourceBadgeUnavailable}`}>{t('usage_stats.source_unavailable')}</span>;
-    }
-    if (isError) {
-      return <span className={`${styles.sourceBadge} ${styles.sourceBadgeError}`}>Error</span>;
-    }
-    return <span className={`${styles.sourceBadge} ${styles.sourceBadgePostgres}`}>{t('usage_stats.source_postgres')}</span>;
-  };
 
   return (
     <div className={styles.container}>
@@ -100,10 +84,6 @@ export function UsageStatsPage() {
 
       {dashboard.error && !dashboard.loading && !dashboard.data && (
         <div className={styles.errorBox}>{dashboard.error}</div>
-      )}
-
-      {!dashboard.loading && !dashboard.error && !dashboard.data && isUnavailable && (
-        <div className={styles.emptyBox}>{t('usage_stats.empty_memory_disabled')}</div>
       )}
 
       {dashboard.data && (
@@ -164,12 +144,12 @@ export function UsageStatsPage() {
 
           <div className={styles.tablesGrid}>
             <ApiKeyTable
-              rows={dashboard.data.byAccount}
+              rows={dashboard.data.byProvider.filter((r) => r.requests > 0)}
               modelRows={dashboard.data.byModel}
               priceTable={priceTable}
             />
             <ModelTable
-              rows={dashboard.data.byModel}
+              rows={dashboard.data.byModel.filter((r) => r.requests > 0)}
               priceTable={priceTable}
             />
           </div>

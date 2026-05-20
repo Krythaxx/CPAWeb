@@ -104,7 +104,7 @@ export function ApiKeyTable({ rows, modelRows, priceTable }: ApiKeyTableProps) {
   return (
     <div className={styles.wrapper}>
       <div className={styles.header}>
-        <span className={styles.headerTitle}>{t('usage_dashboard.api_key_usage')}</span>
+        <span className={styles.headerTitle}>{t('usage_dashboard.provider_usage')}</span>
         <span className={styles.headerHint}>{t('usage_dashboard.click_expand_hint')}</span>
       </div>
       <div className={styles.scroll}>
@@ -113,7 +113,7 @@ export function ApiKeyTable({ rows, modelRows, priceTable }: ApiKeyTableProps) {
             <tr>
               <th />
               <th className={styles.sortable} onClick={() => handleSort('label')}>
-                API Key{arrow('label')}
+                {t('usage_stats.col_provider')}{arrow('label')}
               </th>
               <th className={styles.sortable} onClick={() => handleSort('requests')}>
                 {t('usage_stats.col_requests')}{arrow('requests')}
@@ -152,7 +152,9 @@ export function ApiKeyTable({ rows, modelRows, priceTable }: ApiKeyTableProps) {
                           {isExpanded ? '\u25BC' : '\u25B6'}
                         </button>
                       </td>
-                      <td className={styles.keyCell}>{maskKey(row.label)}</td>
+                      <td className={styles.keyCell}>
+                        {row.apiKeyHash ? maskKey(row.label) : row.label}
+                      </td>
                       <td>
                         <span className={styles.requestCell}>
                           {formatNumber(row.requests)}{' '}

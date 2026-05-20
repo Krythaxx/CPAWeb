@@ -1504,6 +1504,7 @@
     "cached": "Кэш",
     "cache_hit": "Попадание",
     "api_key_usage": "Использование API Key",
+    "provider_usage": "Использование провайдеров",
     "click_expand_hint": "Нажмите для деталей",
     "model_count": "Модели",
     "cost": "Стоимость",
