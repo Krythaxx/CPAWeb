@@ -120,11 +120,16 @@ export function useUsageDashboard() {
         range,
       );
       if (ac.signal.aborted) return;
-      setDataSource('postgres');
-      setData({ ...persistentData, source: 'postgres' });
-      setLastRefreshTime(new Date().toLocaleTimeString());
-      setLoading(false);
-      return;
+      if (
+        persistentData?.summary &&
+        (persistentData.summary.totalRequests > 0 || persistentData.byModel?.length > 0 || persistentData.byProvider?.length > 0)
+      ) {
+        setDataSource('postgres');
+        setData({ ...persistentData, source: 'postgres' });
+        setLastRefreshTime(new Date().toLocaleTimeString());
+        setLoading(false);
+        return;
+      }
     } catch {
       if (ac.signal.aborted) return;
     }
