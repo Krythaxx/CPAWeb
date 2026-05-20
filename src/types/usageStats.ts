@@ -123,3 +123,16 @@ export interface ProviderDisplayRow {
   cost: number | null;
   childModels: UsageStatsGroupRow[];
 }
+
+export interface AuthFileDisplayRow {
+  key: string;
+  label: string;
+  provider: string;
+  requests: number;
+  successCount: number;
+  failureCount: number;
+  totalTokens: number;
+  modelCount: number;
+  cost: number | null;
+  childModels: UsageStatsGroupRow[];
+}

@@ -7,9 +7,9 @@ import {
   collectMemoryStatsBuckets,
   normalizeMemoryStats,
   deriveCoveredMinutes,
+  deriveCoveredMinutesFromBuckets,
   computeApiKeyHash,
-  maskApiKey,
-  isTrustedApiKeyHashField,
+  type PrecomputedApiKeyHashMap,
   type MemoryRequestLogDetail,
 } from '@/services/api/usageStats';
 import { normalizeApiBase } from '@/utils/connection';
@@ -19,6 +19,7 @@ import type {
   DashboardTimeRange,
   HeatmapBucket,
   ApiKeyDisplayRow,
+  AuthFileDisplayRow,
   ProviderDisplayRow,
 } from '@/types/usageStats';
 import {
@@ -187,6 +188,32 @@ function needsMemoryDetailAugmentation(data: UsageStatsResponse): boolean {
   );
 }
 
+async function buildApiKeyHashMap(configuredApiKeys: string[] | undefined): Promise<PrecomputedApiKeyHashMap> {
+  const rawToMasked = new Map<string, string>();
+  const hashToMasked = new Map<string, string>();
+
+  if (!configuredApiKeys || !Array.isArray(configuredApiKeys)) {
+    return { rawToMasked, hashToMasked };
+  }
+
+  const keys = configuredApiKeys.filter((k): k is string => typeof k === 'string' && !!k.trim());
+  await Promise.all(
+    keys.map(async (k) => {
+      const trimmed = k.trim();
+      const masked = `${trimmed.slice(0, 5)}***${trimmed.slice(-4)}`;
+      rawToMasked.set(trimmed, masked);
+      try {
+        const hash = await computeApiKeyHash(trimmed);
+        hashToMasked.set(hash, masked);
+      } catch {
+        // ignore hash computation failures
+      }
+    })
+  );
+
+  return { rawToMasked, hashToMasked };
+}
+
 function buildHeatmapBuckets(buckets: RecentRequestBucket[]): HeatmapBucket[] {
   const normalized = normalizeRecentRequestBuckets(buckets);
   const now = Date.now();
@@ -273,7 +300,11 @@ export function useUsageDashboard() {
       const rawMemory = await usageStatsApi.fetchMemoryStats();
       if (ac.signal.aborted) return;
 
-      let normalized = normalizeMemoryStats(rawMemory);
+      const configuredApiKeys = useConfigStore.getState().config?.apiKeys as string[] | undefined;
+      const hashMap = await buildApiKeyHashMap(configuredApiKeys);
+      if (ac.signal.aborted) return;
+
+      let normalized = normalizeMemoryStats(rawMemory, configuredApiKeys, hashMap);
       const baseMemoryData = normalized;
 
       if (normalized.summary.totalRequests === 0) {
@@ -377,73 +408,101 @@ export function useUsageDashboard() {
   const rpmValue = useMemo<string>(() => {
     if (!data) return '-';
     const covered = deriveCoveredMinutes(data);
-    if (covered === null || covered <= 0) return '-';
-    return (data.summary.totalRequests / covered).toFixed(1);
+    if (covered !== null && covered > 0) {
+      return (data.summary.totalRequests / covered).toFixed(1);
+    }
+    return '-';
   }, [data]);
 
   const tpmValue = useMemo<string>(() => {
     if (!data) return '-';
     const covered = deriveCoveredMinutes(data);
-    if (covered === null || covered <= 0) return '-';
-    return (data.summary.totalTokens / covered).toFixed(1);
+    if (covered !== null && covered > 0 && data.summary.totalTokens > 0) {
+      return (data.summary.totalTokens / covered).toFixed(1);
+    }
+    return '-';
   }, [data]);
 
-  const resolvedApiKeyRowsRef = useRef<ApiKeyDisplayRow[]>([]);
-  const [resolvedApiKeyRows, setResolvedApiKeyRows] = useState<ApiKeyDisplayRow[]>([]);
+  const rpmFromBuckets = useMemo<string>(() => {
+    if (heatmapBuckets.length === 0) return '-';
+    const totalReqs = heatmapBuckets.reduce((t, b) => t + b.success + b.failed, 0);
+    if (totalReqs === 0) return '-';
+    const covered = deriveCoveredMinutesFromBuckets(
+      heatmapBuckets.map((b) => ({
+        time: new Date(b.timeStart).toISOString(),
+        success: b.success,
+        failed: b.failed,
+      })),
+    );
+    if (!covered || covered <= 0) return '-';
+    return (totalReqs / covered).toFixed(1);
+  }, [heatmapBuckets]);
 
-  useEffect(() => {
-    if (!data) return;
-    const configApiKeys = useConfigStore.getState().config?.apiKeys;
-    if (!configApiKeys || !Array.isArray(configApiKeys) || configApiKeys.length === 0) {
-      setResolvedApiKeyRows([]);
-      return;
-    }
+  const tpmFromBuckets = useMemo<string>(() => {
+    if (heatmapBuckets.length === 0 || !data || data.summary.totalTokens <= 0) return '-';
+    const covered = deriveCoveredMinutesFromBuckets(
+      heatmapBuckets.map((b) => ({
+        time: new Date(b.timeStart).toISOString(),
+        success: b.success,
+        failed: b.failed,
+      })),
+    );
+    if (!covered || covered <= 0) return '-';
+    return (data.summary.totalTokens / covered).toFixed(1);
+  }, [heatmapBuckets, data]);
 
-    let cancelled = false;
+  const displayRpm = data && rpmValue !== '-' ? rpmValue : rpmFromBuckets;
+  const displayTpm = data && tpmValue !== '-' ? tpmValue : tpmFromBuckets;
+
+  const apiKeyRows = useMemo<ApiKeyDisplayRow[]>(() => {
+    if (!data) return [];
     const accountRows = data.byAccount ?? [];
-    const hashEntries: { trimmed: string; masked: string }[] = configApiKeys
-      .filter((k): k is string => typeof k === 'string' && !!k.trim())
-      .map((k) => ({ trimmed: k.trim(), masked: maskApiKey(k) }));
-
-    Promise.all(hashEntries.map((e) => computeApiKeyHash(e.trimmed))).then((hashes) => {
-      if (cancelled) return;
-
-      const hashToMasked = new Map<string, string>();
-      hashes.forEach((hash, i) => {
-        hashToMasked.set(hash, hashEntries[i].masked);
-      });
-
-      const rows: ApiKeyDisplayRow[] = [];
-      for (const account of accountRows) {
-        if (account.requests <= 0) continue;
-
-        let trustedHash: string | undefined;
-        if (account.apiKeyHash && isTrustedApiKeyHashField('api_key_hash')) {
-          trustedHash = account.apiKeyHash;
-        }
-        if (!trustedHash) continue;
-
-        const maskedLabel = hashToMasked.get(trustedHash) ?? `hash: ${trustedHash.slice(0, 8)}...`;
-
-        rows.push({
-          key: trustedHash,
-          label: maskedLabel,
+    return accountRows
+      .filter((account) => account.key.startsWith('api-key/') && account.requests > 0)
+      .map((account) => {
+        const childModels = data.byModel.filter(
+          (m) => m.provider && account.apiKeyHash,
+        );
+        const hasModelAttribution = childModels.length > 0;
+        return {
+          key: account.key,
+          label: account.label,
           requests: account.requests,
           successCount: account.successCount,
           failureCount: account.failureCount,
           totalTokens: account.totalTokens,
-          modelCount: -1,
+          modelCount: hasModelAttribution ? new Set(childModels.map((m) => m.label)).size : -1,
           cost: null,
-          hasModelAttribution: false,
-          childModels: [],
-        });
-      }
+          hasModelAttribution,
+          childModels,
+        };
+      })
+      .sort((a, b) => b.requests - a.requests);
+  }, [data]);
 
-      resolvedApiKeyRowsRef.current = rows.sort((a, b) => b.requests - a.requests);
-      setResolvedApiKeyRows(resolvedApiKeyRowsRef.current);
-    });
-
-    return () => { cancelled = true; };
+  const authFileRows = useMemo<AuthFileDisplayRow[]>(() => {
+    if (!data) return [];
+    const accountRows = data.byAccount ?? [];
+    return accountRows
+      .filter((account) => account.key.startsWith('auth-file/') && account.requests > 0)
+      .map((account) => {
+        const childModels = data.byModel.filter(
+          (m) => m.provider === account.provider,
+        );
+        return {
+          key: account.key,
+          label: account.label,
+          provider: account.provider ?? '',
+          requests: account.requests,
+          successCount: account.successCount,
+          failureCount: account.failureCount,
+          totalTokens: account.totalTokens,
+          modelCount: new Set(childModels.map((m) => m.label)).size,
+          cost: null,
+          childModels,
+        };
+      })
+      .sort((a, b) => b.requests - a.requests);
   }, [data]);
 
   const providerRows = useMemo<ProviderDisplayRow[]>(() => {
@@ -481,9 +540,10 @@ export function useUsageDashboard() {
     setServiceUrl,
     refresh: fetchData,
     refreshHeatmap: fetchHeatmap,
-    rpmValue,
-    tpmValue,
-    apiKeyRows: resolvedApiKeyRows,
+    rpmValue: displayRpm,
+    tpmValue: displayTpm,
+    apiKeyRows,
+    authFileRows,
     providerRows,
   };
 }

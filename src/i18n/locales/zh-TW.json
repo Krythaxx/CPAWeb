@@ -1533,6 +1533,8 @@
     "cached": "快取",
     "cache_hit": "命中",
     "api_key_usage": "各 API Key 用量",
+    "auth_file_usage": "各認證文件用量",
+    "col_auth_file": "認證文件",
     "provider_usage": "各提供商用量",
     "click_expand_hint": "點擊行展開模型詳情",
     "model_count": "模型數",

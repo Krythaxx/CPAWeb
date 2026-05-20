@@ -149,6 +149,56 @@ export interface MemoryStatsPayload {
   authFiles?: AuthFileItem[];
 }
 
+export interface NormalizedAuthFileRow {
+  key: string;
+  label: string;
+  provider: string;
+  authIndex: number | undefined;
+  requests: number;
+  successCount: number;
+  failureCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+  cachedTokens: number;
+  totalTokens: number;
+  childModels: UsageStatsGroupRow[];
+}
+
+export interface NormalizedApiKeyRow {
+  key: string;
+  identity: string;
+  label: string;
+  requests: number;
+  successCount: number;
+  failureCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+  cachedTokens: number;
+  totalTokens: number;
+  childModels: UsageStatsGroupRow[];
+}
+
+export interface NormalizedMemoryResult {
+  summary: {
+    totalRequests: number;
+    totalSuccess: number;
+    totalFailure: number;
+    totalTokens: number;
+    inputTokens: number;
+    outputTokens: number;
+    reasoningTokens: number;
+    cachedTokens: number;
+  };
+  apiKeyRows: NormalizedApiKeyRow[];
+  authFileRows: NormalizedAuthFileRow[];
+  byModel: UsageStatsGroupRow[];
+  byProvider: UsageStatsGroupRow[];
+  apiKeyRequestTotal: number;
+  authFileRequestTotal: number;
+}
+
 export interface TokenCounts {
   inputTokens: number;
   outputTokens: number;
@@ -947,6 +997,58 @@ function selectAuthFilesWithStats(files: AuthFileItem[]): AuthFileItem[] {
     .map((entry) => entry.file);
 }
 
+function resolveApiKeyIdentity(
+  mapKey: string,
+  entry: Record<string, unknown>,
+  configuredKeyHashes: Map<string, string>
+): { identity: string; label: string } {
+  for (const hashKey of API_KEY_HASH_KEYS) {
+    const trustedHash = readKnownField(entry, [hashKey]);
+    if (typeof trustedHash === 'string' && trustedHash.trim()) {
+      const trimmed = trustedHash.trim();
+      const masked = configuredKeyHashes.get(trimmed);
+      return {
+        identity: trimmed,
+        label: masked ?? shortHashLabel(trimmed),
+      };
+    }
+  }
+
+  if (looksLikeSha256(mapKey)) {
+    const masked = configuredKeyHashes.get(mapKey);
+    return {
+      identity: mapKey,
+      label: masked ?? shortHashLabel(mapKey),
+    };
+  }
+
+  const trimmedKey = mapKey.trim();
+  if (configuredKeyHashes.has(trimmedKey)) {
+    return {
+      identity: trimmedKey,
+      label: configuredKeyHashes.get(trimmedKey)!,
+    };
+  }
+
+  for (const [hash, masked] of configuredKeyHashes) {
+    if (hash === trimmedKey) {
+      return { identity: hash, label: masked };
+    }
+  }
+
+  if (trimmedKey) {
+    return {
+      identity: trimmedKey,
+      label: `key: ${trimmedKey.slice(0, 8)}...`,
+    };
+  }
+
+  return {
+    identity: 'unknown',
+    label: 'unknown',
+  };
+}
+
 export function collectMemoryStatsBuckets(
   raw: MemoryStatsPayload | ApiKeyUsageResponse
 ): RecentRequestBucket[] {
@@ -968,21 +1070,44 @@ export function collectMemoryStatsBuckets(
   return buckets;
 }
 
+export interface PrecomputedApiKeyHashMap {
+  rawToMasked: Map<string, string>;
+  hashToMasked: Map<string, string>;
+}
+
 export function normalizeMemoryStats(
   raw: MemoryStatsPayload | ApiKeyUsageResponse,
+  configuredApiKeys?: string[],
+  precomputedHashMap?: PrecomputedApiKeyHashMap,
 ): UsageStatsResponse {
-  let totalSuccess = 0;
-  let totalFailure = 0;
-  const byAccount: UsageStatsResponse['byAccount'] = [];
+  const payload = unwrapMemoryStatsPayload(raw);
+  const configuredKeyHashes = new Map<string, string>();
+  if (precomputedHashMap) {
+    precomputedHashMap.rawToMasked.forEach((masked, raw) => {
+      configuredKeyHashes.set(raw, masked);
+    });
+    precomputedHashMap.hashToMasked.forEach((masked, hash) => {
+      configuredKeyHashes.set(hash, masked);
+    });
+  } else if (configuredApiKeys && Array.isArray(configuredApiKeys)) {
+    configuredApiKeys
+      .filter((k): k is string => typeof k === 'string' && !!k.trim())
+      .forEach((k) => {
+        const trimmed = k.trim();
+        configuredKeyHashes.set(trimmed, maskApiKey(trimmed));
+      });
+  }
+
   const byProviderMap = new Map<string, UsageStatsGroupRow>();
   const byModelMap = new Map<string, UsageStatsGroupRow>();
-  const payload = unwrapMemoryStatsPayload(raw);
+  const apiKeyRowMap = new Map<string, NormalizedApiKeyRow>();
+  const authFileRows: NormalizedAuthFileRow[] = [];
 
   const addProviderUsage = (
     providerKey: string,
     success: number,
     failure: number,
-    source: unknown
+    source: unknown,
   ) => {
     let row = byProviderMap.get(providerKey);
     if (!row) {
@@ -997,6 +1122,10 @@ export function normalizeMemoryStats(
     addTokenCounts(row, source);
   };
 
+  let apiKeyRequestTotal = 0;
+  let apiKeyTokenCounts = emptyTokenCounts();
+  let authFileRequestTotal = 0;
+
   for (const [rawProviderKey, keyEntries] of Object.entries(payload.apiKeyUsage || {})) {
     const providerKey = normalizeProviderKey(rawProviderKey);
     if (!keyEntries || typeof keyEntries !== 'object') continue;
@@ -1005,51 +1134,103 @@ export function normalizeMemoryStats(
       const rec = entry as Record<string, unknown> | null | undefined;
       if (!rec || typeof rec !== 'object') continue;
       const { success, failure } = readUsageCounts(rec);
+      const resolved = resolveApiKeyIdentity(authKey, rec, configuredKeyHashes);
+
+      let apiKeyRow = apiKeyRowMap.get(resolved.identity);
+      if (!apiKeyRow) {
+        apiKeyRow = {
+          key: resolved.identity,
+          identity: resolved.identity,
+          label: resolved.label,
+          requests: 0,
+          successCount: 0,
+          failureCount: 0,
+          inputTokens: 0,
+          outputTokens: 0,
+          reasoningTokens: 0,
+          cachedTokens: 0,
+          totalTokens: 0,
+          childModels: [],
+        };
+        apiKeyRowMap.set(resolved.identity, apiKeyRow);
+      }
+
+      apiKeyRow.successCount += success;
+      apiKeyRow.failureCount += failure;
+      apiKeyRow.requests = apiKeyRow.successCount + apiKeyRow.failureCount;
+      apiKeyRequestTotal += success + failure;
+
+      const tokens = readAggregateTokenCounts(rec);
+      apiKeyRow.inputTokens += tokens.inputTokens;
+      apiKeyRow.outputTokens += tokens.outputTokens;
+      apiKeyRow.reasoningTokens += tokens.reasoningTokens;
+      apiKeyRow.cachedTokens += tokens.cachedTokens;
+      apiKeyRow.totalTokens += tokenCountTotal(tokens);
+      apiKeyTokenCounts = addTokenCountValues(apiKeyTokenCounts, tokens);
+
       addProviderUsage(providerKey, success, failure, rec);
       addModelRowsFromRecord(byModelMap, providerKey, rec);
-
-      const accountRow = createEmptyGroupRow({
-        key: `api-key/${providerKey}/${authKey}`,
-        label: authKey || providerKey,
-        provider: providerKey,
-        apiKeyHash: authKey,
-      });
-      addCounts(accountRow, success, failure);
-      addTokenCounts(accountRow, rec);
-      byAccount.push(accountRow);
     }
   }
 
-  selectAuthFilesWithStats(payload.authFiles || []).forEach((file, index) => {
+  const authFileItems = selectAuthFilesWithStats(payload.authFiles || []);
+  const authFileLabels = authFileItems.map((file, index) => {
+    const record = file as Record<string, unknown>;
+    const name = String(file.name ?? '').trim();
+    const rawLabel = stripJsonSuffix(name || `auth-${index + 1}`);
+    const rawAuthIndex = readKnownField(record, AUTH_INDEX_KEYS);
+    const authIndexKey = normalizeRecentRequestAuthIndex(rawAuthIndex);
+    const key = authIndexKey || name || `auth-${index}`;
+    const providerKey = normalizeProviderKey(file.provider ?? file.type, '');
+    return { key, rawLabel, suffix: providerKey || String(index + 1) };
+  });
+  const labelMap = disambiguateLabels(authFileLabels);
+
+  authFileItems.forEach((file, index) => {
     const record = file as Record<string, unknown>;
     const providerKey = normalizeProviderKey(file.provider ?? file.type, 'auth-files');
     const { success, failure } = readUsageCounts(record);
     const rawAuthIndex = readKnownField(record, AUTH_INDEX_KEYS);
     const authIndexKey = normalizeRecentRequestAuthIndex(rawAuthIndex);
     const name = String(file.name ?? '').trim();
-    const accountKey = authIndexKey || name || `${providerKey}-${index + 1}`;
+    const key = authIndexKey || name || `auth-${index}`;
+    const label = labelMap.get(key) ?? stripJsonSuffix(name);
+
+    const tokens = readAggregateTokenCounts(record);
+
+    const row: NormalizedAuthFileRow = {
+      key,
+      label,
+      provider: providerKey,
+      authIndex: authIndexKey && Number.isFinite(Number(authIndexKey)) ? Number(authIndexKey) : undefined,
+      requests: success + failure,
+      successCount: success,
+      failureCount: failure,
+      inputTokens: tokens.inputTokens,
+      outputTokens: tokens.outputTokens,
+      reasoningTokens: tokens.reasoningTokens,
+      cachedTokens: tokens.cachedTokens,
+      totalTokens: tokenCountTotal(tokens),
+      childModels: [],
+    };
+
+    authFileRequestTotal += success + failure;
+    authFileRows.push(row);
 
     addProviderUsage(providerKey, success, failure, record);
     addModelRowsFromRecord(byModelMap, providerKey, record);
-
-    const accountRow = createEmptyGroupRow({
-      key: `auth-file/${providerKey}/${accountKey}`,
-      label: name || accountKey,
-      provider: providerKey,
-      authIndex:
-        authIndexKey && Number.isFinite(Number(authIndexKey))
-          ? Number(authIndexKey)
-          : undefined,
-    });
-    addCounts(accountRow, success, failure);
-    addTokenCounts(accountRow, record);
-    byAccount.push(accountRow);
   });
 
   const byProvider = Array.from(byProviderMap.values());
   const byModel = Array.from(byModelMap.values());
-  totalSuccess = byProvider.reduce((total, row) => total + row.successCount, 0);
-  totalFailure = byProvider.reduce((total, row) => total + row.failureCount, 0);
+
+  const providerRequestTotal = byProvider.reduce(
+    (total, row) => total + row.requests, 0,
+  );
+  const totalRequests = Math.max(apiKeyRequestTotal, authFileRequestTotal, providerRequestTotal);
+  const totalSuccess = byProvider.reduce((t, r) => t + r.successCount, 0);
+  const totalFailure = byProvider.reduce((t, r) => t + r.failureCount, 0);
+
   const summaryTokens = byProvider.reduce<TokenCounts>(
     (totalTokens, row) =>
       addTokenCountValues(totalTokens, {
@@ -1059,18 +1240,51 @@ export function normalizeMemoryStats(
         cachedTokens: row.cachedTokens,
         totalTokens: row.totalTokens,
       }),
-    emptyTokenCounts()
+    emptyTokenCounts(),
   );
 
-  const total = totalSuccess + totalFailure;
+  const byAccount = [
+    ...Array.from(apiKeyRowMap.values()).map((row) => ({
+      key: `api-key/${row.identity}`,
+      label: row.label,
+      requests: row.requests,
+      successCount: row.successCount,
+      failureCount: row.failureCount,
+      successRate: row.requests > 0 ? row.successCount / row.requests : 0,
+      inputTokens: row.inputTokens,
+      outputTokens: row.outputTokens,
+      reasoningTokens: row.reasoningTokens,
+      cachedTokens: row.cachedTokens,
+      cacheTokens: row.cachedTokens,
+      totalTokens: row.totalTokens,
+      apiKeyHash: row.identity,
+    })),
+    ...authFileRows.map((row) => ({
+      key: `auth-file/${row.key}`,
+      label: row.label,
+      requests: row.requests,
+      successCount: row.successCount,
+      failureCount: row.failureCount,
+      successRate: row.requests > 0 ? row.successCount / row.requests : 0,
+      inputTokens: row.inputTokens,
+      outputTokens: row.outputTokens,
+      reasoningTokens: row.reasoningTokens,
+      cachedTokens: row.cachedTokens,
+      cacheTokens: row.cachedTokens,
+      totalTokens: row.totalTokens,
+      provider: row.provider,
+      authIndex: row.authIndex,
+    })),
+  ] as UsageStatsGroupRow[];
+
   return {
     source: 'memory',
     range: 'all',
     summary: {
-      totalRequests: total,
+      totalRequests,
       successCount: totalSuccess,
       failureCount: totalFailure,
-      successRate: total > 0 ? totalSuccess / total : 0,
+      successRate: totalRequests > 0 ? totalSuccess / totalRequests : 0,
       inputTokens: summaryTokens.inputTokens,
       outputTokens: summaryTokens.outputTokens,
       reasoningTokens: summaryTokens.reasoningTokens,
@@ -1160,6 +1374,48 @@ export async function computeApiKeyHash(apiKey: string): Promise<string> {
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function looksLikeSha256(value: string): boolean {
+  return /^[a-f0-9]{64}$/i.test(value);
+}
+
+function shortHashLabel(value: string): string {
+  return `hash: ${value.slice(0, 8)}...`;
+}
+
+function stripJsonSuffix(name: string): string {
+  return name.replace(/\.json$/i, '');
+}
+
+function disambiguateLabels(
+  items: { key: string; rawLabel: string; suffix?: string }[]
+): Map<string, string> {
+  const result = new Map<string, string>();
+  const labelCounts = new Map<string, number>();
+  const labelFirstKey = new Map<string, string>();
+
+  items.forEach((item) => {
+    const count = labelCounts.get(item.rawLabel) ?? 0;
+    labelCounts.set(item.rawLabel, count + 1);
+    if (count === 0) {
+      labelFirstKey.set(item.rawLabel, item.key);
+    }
+  });
+
+  items.forEach((item) => {
+    const count = labelCounts.get(item.rawLabel) ?? 1;
+    if (count <= 1) {
+      result.set(item.key, item.rawLabel);
+    } else if (item.key === labelFirstKey.get(item.rawLabel)) {
+      result.set(item.key, item.rawLabel);
+    } else {
+      const suffix = item.suffix;
+      result.set(item.key, suffix ? `${item.rawLabel} (${suffix})` : item.rawLabel);
+    }
+  });
+
+  return result;
 }
 
 const TRUSTED_API_KEY_HASH_FIELD_NAMES = new Set(API_KEY_HASH_KEYS);
@@ -1252,4 +1508,25 @@ export function augmentMemoryStatsWithRequestLogs(
     byProvider,
     byModel: Array.from(modelMap.values()),
   };
+}
+
+const RECENT_REQUEST_BUCKET_DURATION_MINUTES = 10;
+
+export function deriveCoveredMinutesFromBuckets(
+  buckets: RecentRequestBucket[],
+): number | null {
+  if (!buckets || buckets.length === 0) {
+    return null;
+  }
+
+  const timestamped = buckets.filter((b) => b.time);
+  if (timestamped.length >= 2) {
+    const times = timestamped.map((b) => new Date(b.time!).getTime()).sort((a, b) => a - b);
+    const spanMs = times[times.length - 1] - times[0];
+    if (spanMs > 0) {
+      return Math.max(1, Math.round((spanMs / 60000) + RECENT_REQUEST_BUCKET_DURATION_MINUTES));
+    }
+  }
+
+  return buckets.length * RECENT_REQUEST_BUCKET_DURATION_MINUTES;
 }
