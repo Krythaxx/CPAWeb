@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuthStore, useConfigStore } from '@/stores';
 import {
   usageStatsApi,
+  augmentMemoryStatsWithRequestLogs,
   collectMemoryStatsBuckets,
   normalizeMemoryStats,
 } from '@/services/api/usageStats';
@@ -142,7 +143,22 @@ export function useUsageDashboard() {
       const rawMemory = await usageStatsApi.fetchMemoryStats();
       if (ac.signal.aborted) return;
 
-      const normalized = normalizeMemoryStats(rawMemory);
+      let normalized = normalizeMemoryStats(rawMemory);
+
+      if (
+        normalized.summary.totalRequests > 0 &&
+        (normalized.summary.totalTokens === 0 || normalized.byModel.length === 0)
+      ) {
+        try {
+          const requestLogDetails = await usageStatsApi.fetchMemoryRequestLogDetails(
+            Math.max(1, Math.min(normalized.summary.totalRequests, 50))
+          );
+          if (ac.signal.aborted) return;
+          normalized = augmentMemoryStatsWithRequestLogs(normalized, requestLogDetails);
+        } catch {
+          if (ac.signal.aborted) return;
+        }
+      }
 
       if (
         usageStatisticsEnabled === false &&
