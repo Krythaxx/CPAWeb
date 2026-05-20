@@ -83,7 +83,7 @@ export function useUsageDashboard() {
   const [dataSource, setDataSource] = useState<UsageStatsDataSource>('postgres');
   const [data, setData] = useState<UsageStatsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [range, setRange] = useState<DashboardTimeRange>('7d');
+  const [range, setRange] = useState<DashboardTimeRange>('today');
   const [serviceUrl, setServiceUrlState] = useState(() => loadServiceUrl(apiBase));
   const [lastRefreshTime, setLastRefreshTime] = useState<string | null>(null);
   const [heatmapBuckets, setHeatmapBuckets] = useState<HeatmapBucket[]>([]);
