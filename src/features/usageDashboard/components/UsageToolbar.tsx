@@ -41,7 +41,7 @@ export function UsageToolbar({
   return (
     <div className={styles.toolbar}>
       <div className={styles.left}>
-        <h1 className={styles.title}>CPA Dashboard</h1>
+        <h1 className={styles.title}>{t('nav.usage_stats')}</h1>
         <div className={styles.rangeGroup}>
           {RANGES.map((r) => (
             <button
