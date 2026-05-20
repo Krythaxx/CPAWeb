@@ -59,7 +59,8 @@ export function UsageStatsPage() {
 
   const s = dashboard.data?.summary;
   const isMemory = dashboard.dataSource === 'memory';
-  const showTokenColumns = !isMemory;
+  const hasTokenUsage = Boolean(s && s.totalTokens > 0);
+  const showTokenColumns = !isMemory || hasTokenUsage;
 
   const cacheRate = s && s.inputTokens + s.outputTokens > 0
     ? s.cachedTokens / (s.inputTokens + s.outputTokens)

@@ -41,6 +41,7 @@ const MODEL_USAGE_KEYS = [
 ];
 const USAGE_OBJECT_KEYS = [
   'usage',
+  'tokens',
   'tokenUsage',
   'token_usage',
   'usageInfo',
@@ -92,8 +93,24 @@ const CACHED_TOKEN_KEYS = [
   'cached_tokens',
   'cacheTokens',
   'cache_tokens',
+  'cacheReadTokens',
+  'cache_read_tokens',
   'cacheReadInputTokens',
   'cache_read_input_tokens',
+  'cacheCreationTokens',
+  'cache_creation_tokens',
+  'cacheCreationInputTokens',
+  'cache_creation_input_tokens',
+];
+const CACHE_READ_TOKEN_KEYS = [
+  'cacheReadTokens',
+  'cache_read_tokens',
+  'cacheReadInputTokens',
+  'cache_read_input_tokens',
+];
+const CACHE_CREATION_TOKEN_KEYS = [
+  'cacheCreationTokens',
+  'cache_creation_tokens',
   'cacheCreationInputTokens',
   'cache_creation_input_tokens',
 ];
@@ -141,6 +158,8 @@ export interface TokenCounts {
 }
 
 export interface MemoryRequestLogDetail {
+  id?: string;
+  timestamp?: string;
   provider?: string;
   model?: string;
   success: boolean;
@@ -208,6 +227,25 @@ export const usageStatsApi = {
           ? authFilesResult.value.files
           : [],
     };
+  },
+
+  async fetchMemoryUsageQueueDetails(maxRecords = 50): Promise<MemoryRequestLogDetail[]> {
+    const records = await apiClient.get<unknown[]>('/usage-queue', {
+      params: { count: Math.max(1, Math.min(maxRecords, 500)) },
+      timeout: 15 * 1000,
+    });
+
+    if (!Array.isArray(records)) {
+      return [];
+    }
+
+    return records.reduce<MemoryRequestLogDetail[]>((result, record) => {
+      const detail = parseMemoryUsageQueueDetail(record);
+      if (detail) {
+        result.push(detail);
+      }
+      return result;
+    }, []);
   },
 
   async fetchMemoryRequestLogDetails(maxRequestLogs = 50): Promise<MemoryRequestLogDetail[]> {
@@ -426,6 +464,7 @@ function parseMemoryRequestLogDetail(
   }
 
   return {
+    id: candidate.id,
     ...(provider ? { provider } : {}),
     ...(model ? { model } : {}),
     success,
@@ -440,6 +479,32 @@ function readKnownField(record: Record<string, unknown>, keys: string[]): unknow
     }
   }
   return undefined;
+}
+
+function readTokenNumberField(
+  record: Record<string, unknown>,
+  keys: string[],
+  options: { skipObjectKeys?: string[] } = {}
+): number {
+  const skipObjectKeys = new Set(options.skipObjectKeys ?? []);
+
+  for (const key of keys) {
+    if (!(key in record)) {
+      continue;
+    }
+
+    const value = record[key];
+    if (skipObjectKeys.has(key) && isRecord(value)) {
+      continue;
+    }
+
+    const total = normalizeUsageTotal(value);
+    if (total > 0) {
+      return total;
+    }
+  }
+
+  return 0;
 }
 
 function readRecentRequestBuckets(record: Record<string, unknown>): RecentRequestBucket[] {
@@ -529,9 +594,21 @@ function emptyTokenCounts(): TokenCounts {
 }
 
 function tokenCountTotal(tokens: TokenCounts): number {
+  const direct = tokens.totalTokens;
+  if (direct > 0) {
+    return direct;
+  }
+
+  const generated = tokens.inputTokens + tokens.outputTokens + tokens.reasoningTokens;
+  if (generated > 0) {
+    return generated;
+  }
+
   return (
-    tokens.totalTokens ||
-    tokens.inputTokens + tokens.outputTokens + tokens.reasoningTokens
+    tokens.inputTokens +
+    tokens.outputTokens +
+    tokens.reasoningTokens +
+    tokens.cachedTokens
   );
 }
 
@@ -550,11 +627,17 @@ function chooseRicherTokenCounts(left: TokenCounts, right: TokenCounts): TokenCo
 }
 
 function readDirectTokenCounts(record: Record<string, unknown>): TokenCounts {
-  const inputTokens = normalizeUsageTotal(readKnownField(record, INPUT_TOKEN_KEYS));
-  const outputTokens = normalizeUsageTotal(readKnownField(record, OUTPUT_TOKEN_KEYS));
-  const reasoningTokens = normalizeUsageTotal(readKnownField(record, REASONING_TOKEN_KEYS));
-  const cachedTokens = normalizeUsageTotal(readKnownField(record, CACHED_TOKEN_KEYS));
-  const totalTokens = normalizeUsageTotal(readKnownField(record, TOTAL_TOKEN_KEYS));
+  const inputTokens = readTokenNumberField(record, INPUT_TOKEN_KEYS);
+  const outputTokens = readTokenNumberField(record, OUTPUT_TOKEN_KEYS);
+  const reasoningTokens = readTokenNumberField(record, REASONING_TOKEN_KEYS);
+  const cachedTokens = Math.max(
+    readTokenNumberField(record, CACHED_TOKEN_KEYS),
+    readTokenNumberField(record, CACHE_READ_TOKEN_KEYS) +
+      readTokenNumberField(record, CACHE_CREATION_TOKEN_KEYS)
+  );
+  const totalTokens = readTokenNumberField(record, TOTAL_TOKEN_KEYS, {
+    skipObjectKeys: ['tokens'],
+  });
 
   return {
     inputTokens,
@@ -617,6 +700,56 @@ function readAggregateTokenCounts(value: unknown): TokenCounts {
 
   const fromModels = readModelContainerTokenCounts(record);
   return tokenCountTotal(direct) > 0 ? direct : fromModels;
+}
+
+function readUsageQueueSuccess(record: Record<string, unknown>): boolean {
+  const failedValue = record.failed;
+  if (typeof failedValue === 'boolean') {
+    return !failedValue;
+  }
+
+  const fail = toRecord(record.fail);
+  const statusCode = fail ? normalizeUsageTotal(fail.status_code ?? fail.statusCode) : 0;
+  return statusCode <= 0 || statusCode < 400;
+}
+
+function readUsageQueueTextField(record: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+  }
+  return '';
+}
+
+function parseMemoryUsageQueueDetail(value: unknown): MemoryRequestLogDetail | null {
+  const record = toRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const tokens = readAggregateTokenCounts(record);
+  const model =
+    readUsageQueueTextField(record, SINGLE_MODEL_KEYS) ||
+    readUsageQueueTextField(record, ['alias']);
+  const provider = normalizeProviderKey(readUsageQueueTextField(record, PROVIDER_LOG_KEYS), '');
+
+  if (!model && tokenCountTotal(tokens) <= 0) {
+    return null;
+  }
+
+  const id = readUsageQueueTextField(record, ['request_id', 'requestId', 'id']);
+  const timestamp = readUsageQueueTextField(record, ['timestamp', 'time', 'created_at', 'createdAt']);
+
+  return {
+    ...(id ? { id } : {}),
+    ...(timestamp ? { timestamp } : {}),
+    ...(provider ? { provider } : {}),
+    ...(model ? { model } : {}),
+    success: readUsageQueueSuccess(record),
+    tokens,
+  };
 }
 
 function applyTokenCounts(row: UsageStatsGroupRow, tokens: TokenCounts) {
@@ -973,7 +1106,10 @@ export function augmentMemoryStatsWithRequestLogs(
       : undefined;
 
   details.forEach((detail) => {
-    const providerKey = normalizeProviderKey(detail.provider, providerFallback || 'unknown');
+    const rawProviderKey = normalizeProviderKey(detail.provider, providerFallback || 'unknown');
+    const providerKey = providerMap.has(rawProviderKey)
+      ? rawProviderKey
+      : providerFallback || rawProviderKey;
     const providerRow = providerMap.get(providerKey);
     if (providerRow && shouldFillProviderTokens) {
       applyTokenCounts(providerRow, detail.tokens);

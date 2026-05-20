@@ -6,6 +6,7 @@ import {
   augmentMemoryStatsWithRequestLogs,
   collectMemoryStatsBuckets,
   normalizeMemoryStats,
+  type MemoryRequestLogDetail,
 } from '@/services/api/usageStats';
 import { normalizeApiBase } from '@/utils/connection';
 import type {
@@ -20,6 +21,9 @@ import {
 } from '@/utils/recentRequests';
 
 const STORAGE_KEY_SERVICE_URL = 'cli-proxy-usage-service-url';
+const STORAGE_KEY_MEMORY_USAGE_DETAILS = 'cli-proxy-memory-usage-details';
+const MAX_MEMORY_USAGE_DETAILS = 500;
+const MEMORY_USAGE_DETAILS_TTL_MS = 60 * 60 * 1000;
 
 function normalizeBoolean(value: unknown): boolean | undefined {
   if (typeof value === 'boolean') return value;
@@ -60,6 +64,123 @@ function clearServiceUrl() {
   localStorage.removeItem(STORAGE_KEY_SERVICE_URL);
 }
 
+function hasUsableTokens(detail: MemoryRequestLogDetail): boolean {
+  return (
+    detail.tokens.totalTokens +
+      detail.tokens.inputTokens +
+      detail.tokens.outputTokens +
+      detail.tokens.reasoningTokens +
+      detail.tokens.cachedTokens >
+    0
+  );
+}
+
+function isMemoryRequestLogDetail(value: unknown): value is MemoryRequestLogDetail {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+  const tokens = record.tokens;
+  return Boolean(tokens && typeof tokens === 'object' && !Array.isArray(tokens));
+}
+
+function loadCachedMemoryUsageDetails(): MemoryRequestLogDetail[] {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY_MEMORY_USAGE_DETAILS);
+    if (!raw) {
+      return [];
+    }
+
+    const parsed = JSON.parse(raw) as { savedAt?: unknown; details?: unknown };
+    const savedAt = typeof parsed.savedAt === 'number' ? parsed.savedAt : 0;
+    if (Date.now() - savedAt > MEMORY_USAGE_DETAILS_TTL_MS) {
+      sessionStorage.removeItem(STORAGE_KEY_MEMORY_USAGE_DETAILS);
+      return [];
+    }
+
+    return Array.isArray(parsed.details)
+      ? parsed.details.filter(isMemoryRequestLogDetail).filter(hasUsableTokens).slice(-MAX_MEMORY_USAGE_DETAILS)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveCachedMemoryUsageDetails(details: MemoryRequestLogDetail[]) {
+  try {
+    sessionStorage.setItem(
+      STORAGE_KEY_MEMORY_USAGE_DETAILS,
+      JSON.stringify({
+        savedAt: Date.now(),
+        details: details.slice(-MAX_MEMORY_USAGE_DETAILS),
+      })
+    );
+  } catch {
+    // Ignore storage failures; the live queue still feeds the current render.
+  }
+}
+
+function clearCachedMemoryUsageDetails() {
+  try {
+    sessionStorage.removeItem(STORAGE_KEY_MEMORY_USAGE_DETAILS);
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+function getMemoryUsageDetailKey(detail: MemoryRequestLogDetail): string {
+  if (detail.id) {
+    return `id:${detail.id}`;
+  }
+
+  return [
+    detail.timestamp ?? '',
+    detail.provider ?? '',
+    detail.model ?? '',
+    detail.success ? '1' : '0',
+    detail.tokens.inputTokens,
+    detail.tokens.outputTokens,
+    detail.tokens.reasoningTokens,
+    detail.tokens.cachedTokens,
+    detail.tokens.totalTokens,
+  ].join('|');
+}
+
+function mergeMemoryUsageDetails(
+  existing: MemoryRequestLogDetail[],
+  incoming: MemoryRequestLogDetail[]
+): MemoryRequestLogDetail[] {
+  if (incoming.length === 0) {
+    return existing.slice(-MAX_MEMORY_USAGE_DETAILS);
+  }
+
+  const merged = new Map<string, MemoryRequestLogDetail>();
+  [...existing, ...incoming]
+    .filter(hasUsableTokens)
+    .forEach((detail) => {
+      merged.set(getMemoryUsageDetailKey(detail), detail);
+    });
+  return Array.from(merged.values()).slice(-MAX_MEMORY_USAGE_DETAILS);
+}
+
+function selectMemoryUsageDetailsForStats(
+  details: MemoryRequestLogDetail[],
+  totalRequests: number
+): MemoryRequestLogDetail[] {
+  if (totalRequests <= 0) {
+    return [];
+  }
+  return details.slice(-Math.min(totalRequests, MAX_MEMORY_USAGE_DETAILS));
+}
+
+function needsMemoryDetailAugmentation(data: UsageStatsResponse): boolean {
+  return (
+    data.summary.totalRequests > 0 &&
+    (data.summary.totalTokens === 0 || data.byModel.length === 0)
+  );
+}
+
 function buildHeatmapBuckets(buckets: RecentRequestBucket[]): HeatmapBucket[] {
   const normalized = normalizeRecentRequestBuckets(buckets);
   const now = Date.now();
@@ -94,6 +215,9 @@ export function useUsageDashboard() {
   const [heatmapBuckets, setHeatmapBuckets] = useState<HeatmapBucket[]>([]);
 
   const abortRef = useRef<AbortController | null>(null);
+  const memoryUsageDetailsRef = useRef<MemoryRequestLogDetail[]>(
+    loadCachedMemoryUsageDetails()
+  );
 
   const setServiceUrl = useCallback(
     (url: string) => {
@@ -144,17 +268,56 @@ export function useUsageDashboard() {
       if (ac.signal.aborted) return;
 
       let normalized = normalizeMemoryStats(rawMemory);
+      const baseMemoryData = normalized;
 
-      if (
-        normalized.summary.totalRequests > 0 &&
-        (normalized.summary.totalTokens === 0 || normalized.byModel.length === 0)
-      ) {
+      if (normalized.summary.totalRequests === 0) {
+        memoryUsageDetailsRef.current = [];
+        clearCachedMemoryUsageDetails();
+      }
+
+      if (needsMemoryDetailAugmentation(normalized)) {
+        try {
+          const queueDetails = await usageStatsApi.fetchMemoryUsageQueueDetails(
+            Math.max(1, Math.min(normalized.summary.totalRequests, MAX_MEMORY_USAGE_DETAILS))
+          );
+          if (ac.signal.aborted) return;
+          memoryUsageDetailsRef.current = mergeMemoryUsageDetails(
+            memoryUsageDetailsRef.current,
+            queueDetails
+          );
+          saveCachedMemoryUsageDetails(memoryUsageDetailsRef.current);
+        } catch {
+          if (ac.signal.aborted) return;
+        }
+
+        const cachedDetails = selectMemoryUsageDetailsForStats(
+          memoryUsageDetailsRef.current,
+          normalized.summary.totalRequests
+        );
+        if (cachedDetails.length > 0) {
+          normalized = augmentMemoryStatsWithRequestLogs(baseMemoryData, cachedDetails);
+        }
+      }
+
+      if (needsMemoryDetailAugmentation(normalized)) {
         try {
           const requestLogDetails = await usageStatsApi.fetchMemoryRequestLogDetails(
             Math.max(1, Math.min(normalized.summary.totalRequests, 50))
           );
           if (ac.signal.aborted) return;
-          normalized = augmentMemoryStatsWithRequestLogs(normalized, requestLogDetails);
+          memoryUsageDetailsRef.current = mergeMemoryUsageDetails(
+            memoryUsageDetailsRef.current,
+            requestLogDetails
+          );
+          saveCachedMemoryUsageDetails(memoryUsageDetailsRef.current);
+          const cachedDetails = selectMemoryUsageDetailsForStats(
+            memoryUsageDetailsRef.current,
+            normalized.summary.totalRequests
+          );
+          normalized =
+            cachedDetails.length > 0
+              ? augmentMemoryStatsWithRequestLogs(baseMemoryData, cachedDetails)
+              : normalized;
         } catch {
           if (ac.signal.aborted) return;
         }
