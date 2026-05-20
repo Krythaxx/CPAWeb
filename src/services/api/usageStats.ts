@@ -2,7 +2,7 @@ import axios from 'axios';
 import { apiClient } from './client';
 import type {
   UsageStatsResponse,
-  UsageStatsTimeRange,
+  DashboardTimeRange,
 } from '@/types/usageStats';
 import type { ApiKeyUsageResponse } from '@/utils/recentRequests';
 
@@ -20,7 +20,7 @@ export const usageStatsApi = {
   async fetchPersistentStats(
     serviceUrl: string,
     managementKey: string,
-    range: UsageStatsTimeRange,
+    range: DashboardTimeRange,
   ): Promise<UsageStatsResponse> {
     const base = resolveServiceUrl(serviceUrl);
     const response = await axios.get<UsageStatsResponse>(

@@ -1,5 +1,7 @@
 export type UsageStatsTimeRange = 'today' | '7d' | '30d' | 'all';
 
+export type DashboardTimeRange = '12h' | '24h' | 'today' | 'yesterday' | '7d' | 'all';
+
 export interface UsageStatsSummary {
   totalRequests: number;
   successCount: number;
@@ -11,6 +13,10 @@ export interface UsageStatsSummary {
   cachedTokens: number;
   cacheTokens: number;
   totalTokens: number;
+  requestTrend?: TrendBucket[];
+  tokenTrend?: TrendBucket[];
+  inputOutputTrend?: TrendBucket[];
+  cacheTrend?: TrendBucket[];
 }
 
 export interface UsageStatsGroupRow {
@@ -42,7 +48,7 @@ export interface UsageStatsServiceInfo {
 
 export interface UsageStatsResponse {
   source: 'postgres' | 'memory';
-  range: UsageStatsTimeRange;
+  range: UsageStatsTimeRange | DashboardTimeRange;
   summary: UsageStatsSummary;
   byModel: UsageStatsGroupRow[];
   byProvider: UsageStatsGroupRow[];
@@ -67,6 +73,25 @@ export interface UsageStatsState {
   dataSource: UsageStatsDataSource;
   data: UsageStatsResponse | null;
   error: string | null;
-  range: UsageStatsTimeRange;
+  range: DashboardTimeRange;
   serviceUrl: string;
+}
+
+export interface TrendBucket {
+  timestamp: number;
+  value: number;
+}
+
+export interface HeatmapBucket {
+  timeStart: number;
+  timeEnd: number;
+  success: number;
+  failed: number;
+  successRate: number;
+}
+
+export interface PriceEntry {
+  model: string;
+  inputPricePerM: number;
+  outputPricePerM: number;
 }

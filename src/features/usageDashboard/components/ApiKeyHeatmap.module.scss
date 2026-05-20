@@ -1,0 +1,112 @@
+.card {
+  background: var(--bg-primary, #fff);
+  border: 1px solid var(--border-color, #e5e5e5);
+  border-radius: 6px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  position: relative;
+}
+
+.cardHeader {
+  margin-bottom: 12px;
+}
+
+.cardTitleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.cardTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary, #111827);
+}
+
+.cardMeta {
+  font-size: 12px;
+  color: var(--text-secondary, #6b7280);
+}
+
+.ratioBar {
+  display: flex;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: #fee2e2;
+}
+
+.ratioSuccess {
+  background: #10b981;
+  min-width: 0;
+}
+
+.ratioFailure {
+  background: #ef4444;
+  min-width: 0;
+}
+
+.ratioLabels {
+  display: flex;
+  gap: 16px;
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+.labelSuccess {
+  color: #10b981;
+  font-weight: 500;
+}
+
+.labelFailure {
+  color: #ef4444;
+  font-weight: 500;
+}
+
+.grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  position: relative;
+}
+
+.dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: opacity 150ms ease;
+
+  &:hover {
+    opacity: 0.8;
+  }
+}
+
+.emptyHint {
+  font-size: 12px;
+  color: var(--text-tertiary, #9ca3af);
+  padding: 12px 0;
+}
+
+.tooltip {
+  position: absolute;
+  background: var(--bg-primary, #fff);
+  border: 1px solid var(--border-color, #e5e5e5);
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--text-primary, #111827);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.1);
+  pointer-events: none;
+  z-index: 10;
+  white-space: nowrap;
+}
+
+.tooltipTime {
+  font-weight: 600;
+  margin-bottom: 4px;
+}

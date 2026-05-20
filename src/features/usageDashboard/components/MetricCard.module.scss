@@ -1,0 +1,46 @@
+.card {
+  background: var(--bg-primary, #fff);
+  border: 1px solid var(--border-color, #e5e5e5);
+  border-radius: 6px;
+  padding: 14px 16px 8px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.title {
+  font-size: 12px;
+  color: var(--text-secondary, #6b7280);
+  font-weight: 500;
+}
+
+.value {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--text-primary, #111827);
+  line-height: 1.2;
+}
+
+.subtitle {
+  font-size: 12px;
+  color: var(--text-secondary, #6b7280);
+  margin-top: 2px;
+}
+
+.chartArea {
+  margin-top: 6px;
+  min-height: 48px;
+}
+
+.chartPlaceholder {
+  height: 48px;
+  border-top: 1.5px dashed var(--border-color, #e5e5e5);
+  opacity: 0.4;
+}

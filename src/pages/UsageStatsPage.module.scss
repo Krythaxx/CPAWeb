@@ -1,498 +1,52 @@
-@use '../styles/variables' as *;
-@use '../styles/mixins' as *;
+@use '@/styles/variables.scss' as *;
 
 .container {
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  position: relative;
+  gap: 0;
+  padding: 0;
+  min-height: 100%;
 }
 
-.header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.headerLeft {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.headerActions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.pageTitle {
-  font-size: 28px;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin: 0;
-}
-
-.description {
+.loadingBox,
+.errorBox {
+  text-align: center;
+  padding: $spacing-lg;
   font-size: 14px;
-  color: var(--text-secondary);
-  margin: 0;
+  border-radius: $radius-sm;
 }
 
-.controls {
-  display: flex;
-  gap: $spacing-sm;
-  flex-wrap: wrap;
-  align-items: flex-end;
+.loadingBox {
+  color: var(--text-secondary, #6b7280);
 }
 
-.controlGroup {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-
-  label {
-    font-size: 12px;
-    color: var(--text-secondary);
-    font-weight: 500;
-    white-space: nowrap;
-  }
+.errorBox {
+  color: var(--error-color, #c65746);
+  background: #fef2f2;
+  border: 1px solid #fecaca;
 }
 
-.rangeToggle {
-  display: inline-flex;
-  gap: $spacing-xs;
-  align-items: center;
-  padding: 3px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--bg-secondary) 92%, transparent);
-  border: 1px solid color-mix(in srgb, var(--border-color) 88%, transparent);
-}
-
-.rangeButton:global(.btn.btn-sm) {
-  padding: 6px 12px;
-  border-radius: 999px;
-  border-color: transparent;
-  background: transparent;
-  color: var(--text-secondary);
-  box-shadow: none;
-
-  &:hover:not(:disabled) {
-    border-color: transparent;
-    background: color-mix(in srgb, var(--bg-hover) 72%, transparent);
-    color: var(--text-primary);
-  }
-}
-
-.rangeButtonActive:global(.btn.btn-sm) {
-  background: var(--primary-color);
-  border-color: var(--primary-color);
-  color: var(--primary-contrast, #fff);
-  box-shadow: 0 8px 18px -14px rgba(0, 0, 0, 0.45);
-
-  &:hover:not(:disabled) {
-    background: var(--primary-hover);
-    border-color: var(--primary-hover);
-    color: var(--primary-contrast, #fff);
-  }
-}
-
-.serviceUrlInput {
-  padding: 6px 12px;
-  border: 1px solid var(--border-color);
-  border-radius: $radius-md;
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
-  font-size: 13px;
-  min-width: 260px;
-  height: 34px;
-  box-sizing: border-box;
-
-  &:focus {
-    outline: none;
-    border-color: var(--primary-color);
-  }
-
-  @include mobile {
-    min-width: 100%;
-  }
-}
-
-.sourceBadge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.sourceBadgePostgres {
-  background-color: color-mix(in srgb, var(--success-color, #10b981) 14%, var(--bg-secondary));
-  color: var(--success-color, #10b981);
-  border: 1px solid color-mix(in srgb, var(--success-color, #10b981) 30%, var(--border-color));
-}
-
-.sourceBadgeMemory {
-  background-color: color-mix(in srgb, var(--warning-text, #e0aa14) 14%, var(--bg-secondary));
-  color: var(--warning-text, #e0aa14);
-  border: 1px solid color-mix(in srgb, var(--warning-text, #e0aa14) 30%, var(--border-color));
-}
-
-.sourceBadgeUnavailable {
-  background-color: color-mix(in srgb, var(--danger-color) 12%, var(--bg-secondary));
-  color: var(--danger-color);
-  border: 1px solid color-mix(in srgb, var(--danger-color) 24%, var(--border-color));
-}
-
-.sourceBadgeError {
-  background-color: color-mix(in srgb, var(--danger-color) 12%, var(--bg-secondary));
-  color: var(--danger-color);
-  border: 1px solid color-mix(in srgb, var(--danger-color) 24%, var(--border-color));
-}
-
-// Stat Cards (v1.9.3 style)
-.statsGrid {
+.metricsGrid {
   display: grid;
-  gap: 14px;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 12px;
 
-  @include mobile {
+  @media (max-width: $breakpoint-tablet) {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  @media (max-width: $breakpoint-mobile) {
     grid-template-columns: 1fr;
   }
 }
 
-.statCard {
-  --accent: var(--primary-color);
-  --accent-soft: rgba($primary-color, 0.18);
-  --accent-border: rgba($primary-color, 0.35);
-
-  grid-column: span 4;
-  position: relative;
-  padding: 18px;
-  background:
-    radial-gradient(120% 140% at 12% 0%, var(--accent-soft) 0%, rgba(0, 0, 0, 0) 62%),
-    var(--bg-primary);
-  border-radius: $radius-lg;
-  border: 1px solid var(--border-color);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-height: 120px;
-  box-shadow: var(--shadow-lg);
-  transition:
-    transform $transition-fast,
-    box-shadow $transition-fast,
-    border-color $transition-fast;
-  overflow: hidden;
-
-  &::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    height: 3px;
-    width: 100%;
-    background: linear-gradient(90deg, var(--accent), rgba(0, 0, 0, 0));
-    opacity: 0.95;
-  }
-
-  &:hover {
-    transform: translateY(-2px);
-    border-color: var(--accent-border);
-    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.22);
-  }
-
-  @include tablet {
-    grid-column: span 6;
-  }
-
-  @include mobile {
-    grid-column: auto;
-    min-height: 100px;
-  }
-}
-
-.statCard:nth-child(-n + 2) {
-  grid-column: span 6;
-
-  .statValue {
-    font-size: 32px;
-  }
-
-  @include mobile {
-    grid-column: auto;
-
-    .statValue {
-      font-size: 28px;
-    }
-  }
-}
-
-.statCardHeader {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
-}
-
-.statLabel {
-  font-size: 12px;
-  color: var(--text-tertiary);
-  font-weight: 700;
-  letter-spacing: 0.02em;
-}
-
-.statValue {
-  font-size: 28px;
-  font-weight: 800;
-  color: var(--text-primary);
-  line-height: 1.2;
-  font-variant-numeric: tabular-nums;
-}
-
-.summaryValueUnavailable {
-  font-size: 14px;
-  color: var(--text-tertiary);
-  font-style: italic;
-}
-
-.statMetaRow {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 10px;
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
-.statMetaItem {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.statMetaDot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background-color: var(--text-secondary);
-}
-
-.statSuccess {
-  color: var(--success-color);
-}
-
-.statFailure {
-  color: var(--danger-color);
-}
-
-.statNeutral {
-  color: var(--text-secondary);
-}
-
-// Details Grid (two-column)
-.detailsGrid {
+.tablesGrid {
   display: grid;
-  gap: 20px;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
 
-  > * {
-    min-width: 0;
-  }
-
-  @include desktop {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-.detailsFixedCard {
-  display: flex;
-  flex-direction: column;
-  height: 520px;
-  overflow: hidden;
-
-  @include mobile {
-    height: 420px;
-  }
-}
-
-.detailsScroll {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: auto;
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior: contain;
-}
-
-// Tables
-.tableWrapper {
-  overflow-x: auto;
-}
-
-.table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 12px;
-
-  th,
-  td {
-    padding: 10px 12px;
-    text-align: left;
-    border-bottom: 1px solid var(--border-color);
-  }
-
-  th {
-    font-weight: 600;
-    color: var(--text-tertiary);
-    background-color: var(--bg-secondary);
-    white-space: nowrap;
-  }
-
-  td {
-    color: var(--text-primary);
-  }
-
-  tbody tr:hover {
-    background-color: var(--bg-tertiary);
-  }
-}
-
-.sortableHeader {
-  user-select: none;
-  transition: color 0.15s ease;
-
-  &:hover {
-    color: var(--text-primary);
-  }
-}
-
-.sortHeaderButton {
-  display: inline-flex;
-  align-items: center;
-  width: 100%;
-  border: 0;
-  padding: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-
-  &:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 2px;
-    border-radius: $radius-sm;
-  }
-}
-
-.modelCell {
-  font-weight: 500;
-  max-width: 240px;
-  word-break: break-all;
-}
-
-.requestCountCell {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
-  font-variant-numeric: tabular-nums;
-}
-
-.requestBreakdown {
-  color: var(--text-secondary);
-  white-space: nowrap;
-}
-
-.emptyRow {
-  td {
-    text-align: center !important;
-    color: var(--text-tertiary);
-    font-style: italic;
-    padding: $spacing-md $spacing-sm;
-  }
-}
-
-.modelHint {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  background-color: color-mix(in srgb, var(--info-color, #3b82f6) 8%, var(--bg-secondary));
-  border-left: 3px solid var(--info-color, #3b82f6);
-  border-radius: $radius-md;
-  font-size: 13px;
-  color: var(--text-secondary);
-  line-height: 1.5;
-}
-
-.cellUnavailable {
-  color: var(--text-tertiary);
-  font-style: italic;
-}
-
-.serviceInfo {
-  display: flex;
-  gap: $spacing-md;
-  flex-wrap: wrap;
-  padding: $spacing-md;
-  background-color: var(--bg-secondary);
-  border-radius: $radius-md;
-  font-size: 13px;
-  color: var(--text-secondary);
-}
-
-.serviceInfoItem {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-
-  span:first-child {
-    color: var(--text-tertiary);
-  }
-
-  span:last-child {
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-}
-
-.errorBox {
-  padding: 10px;
-  background-color: rgba($error-color, 0.1);
-  border: 1px solid var(--danger-color);
-  border-radius: $radius-sm;
-  color: var(--danger-color);
-  font-size: 12px;
-}
-
-.emptyBox {
-  padding: $spacing-xl $spacing-md;
-  text-align: center;
-  color: var(--text-secondary);
-  font-size: 14px;
-}
-
-.loadingBox {
-  padding: $spacing-xl $spacing-md;
-  text-align: center;
-  color: var(--text-secondary);
-  font-size: 14px;
-}
-
-.refreshButton:global(.btn.btn-sm) {
-  padding-inline: 14px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--primary-color) 12%, var(--bg-secondary));
-  border-color: color-mix(in srgb, var(--primary-color) 22%, var(--border-color));
-  color: var(--text-primary);
-
-  &:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--primary-color) 16%, var(--bg-secondary));
-    border-color: color-mix(in srgb, var(--primary-color) 34%, var(--border-color));
+  @media (max-width: $breakpoint-tablet) {
+    grid-template-columns: 1fr;
   }
 }
