@@ -1548,6 +1548,10 @@
     "price_hint": "價格單位：美元/百萬 Token",
     "input_price": "輸入單價",
     "output_price": "輸出單價",
-    "no_models_for_pricing": "暫無模型資料"
+    "no_models_for_pricing": "暫無模型資料",
+    "rpm": "RPM",
+    "tpm": "TPM",
+    "requests_per_minute": "每分鐘請求數",
+    "tokens_per_minute": "每分鐘 Token 數"
   }
 }

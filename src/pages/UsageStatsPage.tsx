@@ -8,6 +8,7 @@ import { ApiKeyHeatmap } from '@/features/usageDashboard/components/ApiKeyHeatma
 import { MetricCard } from '@/features/usageDashboard/components/MetricCard';
 import { ApiKeyTable } from '@/features/usageDashboard/components/ApiKeyTable';
 import { ModelTable } from '@/features/usageDashboard/components/ModelTable';
+import { ProviderTable } from '@/features/usageDashboard/components/ProviderTable';
 import { PriceManagerModal } from '@/features/usageDashboard/components/PriceManagerModal';
 import { calculateCost, formatCost } from '@/features/usageDashboard/utils/priceCalculator';
 import styles from './UsageStatsPage.module.scss';
@@ -17,10 +18,6 @@ function formatNumber(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
   return n.toLocaleString();
-}
-
-function formatPercent(rate: number): string {
-  return `${(rate * 100).toFixed(1)}%`;
 }
 
 export function UsageStatsPage() {
@@ -121,32 +118,24 @@ export function UsageStatsPage() {
               secondaryColor="#10b981"
             />
             <MetricCard
-              title={t('usage_stats.summary_total_requests')}
-              value={s ? formatNumber(s.totalRequests) : '-'}
-              subtitle={
-                s
-                  ? `${t('usage_stats.col_success')}: ${formatNumber(s.successCount)} · ${t('usage_stats.col_failure')}: ${formatNumber(s.failureCount)} · ${t('usage_stats.col_success_rate')}: ${formatPercent(s.successRate)}`
-                  : undefined
-              }
+              title={t('usage_dashboard.rpm')}
+              value={dashboard.rpmValue}
+              subtitle={t('usage_dashboard.requests_per_minute')}
               trend={s?.requestTrend}
               trendColor="#f97316"
             />
             <MetricCard
-              title={t('usage_stats.summary_success_rate')}
-              value={s ? formatPercent(s.successRate) : '-'}
-              subtitle={
-                s
-                  ? s.successRate >= 0.95 ? t('usage_stats.rate_good') : s.successRate >= 0.8 ? t('usage_stats.rate_fair') : t('usage_stats.rate_poor')
-                  : undefined
-              }
+              title={t('usage_dashboard.tpm')}
+              value={dashboard.tpmValue}
+              subtitle={t('usage_dashboard.tokens_per_minute')}
+              trend={s?.tokenTrend}
               trendColor="#8b5cf6"
             />
           </div>
 
           <div className={styles.tablesGrid}>
             <ApiKeyTable
-              rows={dashboard.data.byProvider.filter((r) => r.requests > 0)}
-              modelRows={dashboard.data.byModel}
+              rows={dashboard.apiKeyRows}
               priceTable={priceTable}
             />
             <ModelTable
@@ -154,6 +143,11 @@ export function UsageStatsPage() {
               priceTable={priceTable}
             />
           </div>
+
+          <ProviderTable
+            rows={dashboard.providerRows}
+            priceTable={priceTable}
+          />
         </>
       )}
 

@@ -1084,6 +1084,92 @@ export function normalizeMemoryStats(
   };
 }
 
+const API_KEY_HASH_KEYS = [
+  'api_key_hash',
+  'apiKeyHash',
+  'client_api_key_hash',
+  'clientApiKeyHash',
+];
+const PERIOD_START_KEYS = ['periodStartMs', 'period_start_ms', 'periodStart'];
+const PERIOD_END_KEYS = ['periodEndMs', 'period_end_ms', 'periodEnd'];
+const COVERED_MINUTES_KEYS = ['coveredMinutes', 'covered_minutes'];
+const LEGACY_ARRAY_KEYS = ['details', 'events', 'records', 'items'];
+
+export function isCanonicalResponse(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const summary = value.summary;
+  if (!isRecord(summary)) return false;
+  const hasByModel = Array.isArray(value.byModel);
+  const hasByProvider = Array.isArray(value.byProvider);
+  return hasByModel && hasByProvider;
+}
+
+export function isLegacyEventPayload(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  return LEGACY_ARRAY_KEYS.some(
+    (key) => Array.isArray(value[key]) && (value[key] as unknown[]).length > 0
+  );
+}
+
+export function deriveCoveredMinutes(data: UsageStatsResponse): number | null {
+  const summary = data.summary as unknown as Record<string, unknown>;
+  if (isRecord(summary)) {
+    const cm = readKnownField(summary, COVERED_MINUTES_KEYS);
+    const cmNum = typeof cm === 'number' && Number.isFinite(cm) && cm > 0 ? cm : 0;
+    if (cmNum > 0) return cmNum;
+
+    const startMs = readKnownField(summary, PERIOD_START_KEYS);
+    const endMs = readKnownField(summary, PERIOD_END_KEYS);
+    if (typeof startMs === 'number' && typeof endMs === 'number' && endMs > startMs) {
+      return Math.max(1, Math.round((endMs - startMs) / 60000));
+    }
+  }
+
+  if (
+    data.summary.periodStartMs != null &&
+    data.summary.periodEndMs != null &&
+    data.summary.periodEndMs > data.summary.periodStartMs
+  ) {
+    return Math.max(1, Math.round((data.summary.periodEndMs - data.summary.periodStartMs) / 60000));
+  }
+
+  const trendTimestamps = extractTrendTimestamps(data.summary.requestTrend ?? data.summary.tokenTrend);
+  if (trendTimestamps) return Math.max(1, Math.round((trendTimestamps.end - trendTimestamps.start) / 60000));
+
+  return null;
+}
+
+function extractTrendTimestamps(trend: { timestamp: number }[] | undefined): { start: number; end: number } | null {
+  if (!trend || trend.length < 2) return null;
+  const first = trend[0].timestamp;
+  const last = trend[trend.length - 1].timestamp;
+  if (typeof first !== 'number' || typeof last !== 'number' || last <= first) return null;
+  return { start: first, end: last };
+}
+
+export function maskApiKey(key: string): string {
+  const trimmed = key.trim();
+  if (trimmed.length <= 8) return trimmed;
+  return `${trimmed.slice(0, 5)}***${trimmed.slice(-4)}`;
+}
+
+export async function computeApiKeyHash(apiKey: string): Promise<string> {
+  const trimmed = apiKey.trim();
+  const encoder = new TextEncoder();
+  const data = encoder.encode(trimmed);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+const TRUSTED_API_KEY_HASH_FIELD_NAMES = new Set(API_KEY_HASH_KEYS);
+
+export function isTrustedApiKeyHashField(fieldName: string): boolean {
+  return TRUSTED_API_KEY_HASH_FIELD_NAMES.has(fieldName);
+}
+
+export { API_KEY_HASH_KEYS, PERIOD_START_KEYS, PERIOD_END_KEYS, COVERED_MINUTES_KEYS };
+
 export function augmentMemoryStatsWithRequestLogs(
   data: UsageStatsResponse,
   details: MemoryRequestLogDetail[]

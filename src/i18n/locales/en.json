@@ -1522,6 +1522,10 @@
     "price_hint": "Unit: USD per million tokens",
     "input_price": "Input Price",
     "output_price": "Output Price",
-    "no_models_for_pricing": "No models available"
+    "no_models_for_pricing": "No models available",
+    "rpm": "RPM",
+    "tpm": "TPM",
+    "requests_per_minute": "Requests per minute",
+    "tokens_per_minute": "Tokens per minute"
   }
 }

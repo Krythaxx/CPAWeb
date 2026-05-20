@@ -1519,6 +1519,10 @@
     "price_hint": "Единица: USD за млн токенов",
     "input_price": "Цена входа",
     "output_price": "Цена выхода",
-    "no_models_for_pricing": "Нет моделей"
+    "no_models_for_pricing": "Нет моделей",
+    "rpm": "RPM",
+    "tpm": "TPM",
+    "requests_per_minute": "Запросов в минуту",
+    "tokens_per_minute": "Токенов в минуту"
   }
 }

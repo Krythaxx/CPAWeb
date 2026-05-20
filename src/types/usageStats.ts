@@ -13,6 +13,9 @@ export interface UsageStatsSummary {
   cachedTokens: number;
   cacheTokens: number;
   totalTokens: number;
+  periodStartMs?: number;
+  periodEndMs?: number;
+  coveredMinutes?: number;
   requestTrend?: TrendBucket[];
   tokenTrend?: TrendBucket[];
   inputOutputTrend?: TrendBucket[];
@@ -94,4 +97,29 @@ export interface PriceEntry {
   model: string;
   inputPricePerM: number;
   outputPricePerM: number;
+}
+
+export interface ApiKeyDisplayRow {
+  key: string;
+  label: string;
+  requests: number;
+  successCount: number;
+  failureCount: number;
+  totalTokens: number;
+  modelCount: number;
+  cost: number | null;
+  hasModelAttribution: boolean;
+  childModels: UsageStatsGroupRow[];
+}
+
+export interface ProviderDisplayRow {
+  key: string;
+  label: string;
+  requests: number;
+  successCount: number;
+  failureCount: number;
+  totalTokens: number;
+  modelCount: number;
+  cost: number | null;
+  childModels: UsageStatsGroupRow[];
 }

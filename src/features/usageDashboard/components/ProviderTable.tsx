@@ -1,8 +1,8 @@
 import { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { ApiKeyDisplayRow, PriceEntry } from '@/types/usageStats';
+import type { ProviderDisplayRow, PriceEntry } from '@/types/usageStats';
 import { calculateCost, findPriceEntry, formatCost } from '../utils/priceCalculator';
-import styles from './ApiKeyTable.module.scss';
+import styles from './ProviderTable.module.scss';
 
 function formatNumber(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -10,15 +10,15 @@ function formatNumber(n: number): string {
   return n.toLocaleString();
 }
 
-type SortKey = 'label' | 'requests' | 'tokens' | 'cost';
+type SortKey = 'label' | 'requests' | 'tokens' | 'models' | 'cost';
 type SortDir = 'asc' | 'desc';
 
-interface ApiKeyTableProps {
-  rows: ApiKeyDisplayRow[];
+interface ProviderTableProps {
+  rows: ProviderDisplayRow[];
   priceTable: PriceEntry[];
 }
 
-export function ApiKeyTable({ rows, priceTable }: ApiKeyTableProps) {
+export function ProviderTable({ rows, priceTable }: ProviderTableProps) {
   const { t } = useTranslation();
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>('requests');
@@ -33,8 +33,8 @@ export function ApiKeyTable({ rows, priceTable }: ApiKeyTableProps) {
     }
   };
 
-  const computeRowCost = (row: ApiKeyDisplayRow): number | null => {
-    if (!row.hasModelAttribution) return null;
+  const computeRowCost = (row: ProviderDisplayRow): number | null => {
+    if (!row.childModels || row.childModels.length === 0) return null;
     let total = 0;
     let hasPrice = false;
     for (const m of row.childModels) {
@@ -57,6 +57,8 @@ export function ApiKeyTable({ rows, priceTable }: ApiKeyTableProps) {
           return dir * (a.requests - b.requests);
         case 'tokens':
           return dir * (a.totalTokens - b.totalTokens);
+        case 'models':
+          return dir * (a.modelCount - b.modelCount);
         case 'cost': {
           const ca = computeRowCost(a) ?? -1;
           const cb = computeRowCost(b) ?? -1;
@@ -78,7 +80,7 @@ export function ApiKeyTable({ rows, priceTable }: ApiKeyTableProps) {
   return (
     <div className={styles.wrapper}>
       <div className={styles.header}>
-        <span className={styles.headerTitle}>{t('usage_dashboard.api_key_usage')}</span>
+        <span className={styles.headerTitle}>{t('usage_dashboard.provider_usage')}</span>
         <span className={styles.headerHint}>{t('usage_dashboard.click_expand_hint')}</span>
       </div>
       <div className={styles.scroll}>
@@ -87,7 +89,7 @@ export function ApiKeyTable({ rows, priceTable }: ApiKeyTableProps) {
             <tr>
               <th />
               <th className={styles.sortable} onClick={() => handleSort('label')}>
-                API Key{arrow('label')}
+                {t('usage_stats.col_provider')}{arrow('label')}
               </th>
               <th className={styles.sortable} onClick={() => handleSort('requests')}>
                 {t('usage_stats.col_requests')}{arrow('requests')}
@@ -95,7 +97,9 @@ export function ApiKeyTable({ rows, priceTable }: ApiKeyTableProps) {
               <th className={styles.sortable} onClick={() => handleSort('tokens')}>
                 Token{arrow('tokens')}
               </th>
-              <th>{t('usage_dashboard.model_count')}</th>
+              <th className={styles.sortable} onClick={() => handleSort('models')}>
+                {t('usage_dashboard.model_count')}{arrow('models')}
+              </th>
               <th className={styles.sortable} onClick={() => handleSort('cost')}>
                 {t('usage_dashboard.cost')}{arrow('cost')}
               </th>
@@ -134,7 +138,7 @@ export function ApiKeyTable({ rows, priceTable }: ApiKeyTableProps) {
                         </span>
                       </td>
                       <td>{formatNumber(row.totalTokens)}</td>
-                      <td>{row.hasModelAttribution ? row.modelCount : '-'}</td>
+                      <td>{row.modelCount}</td>
                       <td>{formatCost(cost)}</td>
                     </tr>
                     {isExpanded && (
@@ -150,7 +154,7 @@ export function ApiKeyTable({ rows, priceTable }: ApiKeyTableProps) {
                               </tr>
                             </thead>
                             <tbody>
-                              {!row.hasModelAttribution || row.childModels.length === 0 ? (
+                              {row.childModels.length === 0 ? (
                                 <tr>
                                   <td colSpan={4} className={styles.empty}>
                                     {t('usage_dashboard.no_model_detail')}

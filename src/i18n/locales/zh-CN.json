@@ -1522,6 +1522,10 @@
     "price_hint": "价格单位：美元/百万 Token",
     "input_price": "输入单价",
     "output_price": "输出单价",
-    "no_models_for_pricing": "暂无模型数据"
+    "no_models_for_pricing": "暂无模型数据",
+    "rpm": "RPM",
+    "tpm": "TPM",
+    "requests_per_minute": "每分钟请求数",
+    "tokens_per_minute": "每分钟 Token 数"
   }
 }

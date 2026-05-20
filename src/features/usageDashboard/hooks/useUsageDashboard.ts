@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore, useConfigStore } from '@/stores';
 import {
@@ -6,6 +6,10 @@ import {
   augmentMemoryStatsWithRequestLogs,
   collectMemoryStatsBuckets,
   normalizeMemoryStats,
+  deriveCoveredMinutes,
+  computeApiKeyHash,
+  maskApiKey,
+  isTrustedApiKeyHashField,
   type MemoryRequestLogDetail,
 } from '@/services/api/usageStats';
 import { normalizeApiBase } from '@/utils/connection';
@@ -14,6 +18,8 @@ import type {
   UsageStatsResponse,
   DashboardTimeRange,
   HeatmapBucket,
+  ApiKeyDisplayRow,
+  ProviderDisplayRow,
 } from '@/types/usageStats';
 import {
   normalizeRecentRequestBuckets,
@@ -368,6 +374,100 @@ export function useUsageDashboard() {
     };
   }, []);
 
+  const rpmValue = useMemo<string>(() => {
+    if (!data) return '-';
+    const covered = deriveCoveredMinutes(data);
+    if (covered === null || covered <= 0) return '-';
+    return (data.summary.totalRequests / covered).toFixed(1);
+  }, [data]);
+
+  const tpmValue = useMemo<string>(() => {
+    if (!data) return '-';
+    const covered = deriveCoveredMinutes(data);
+    if (covered === null || covered <= 0) return '-';
+    return (data.summary.totalTokens / covered).toFixed(1);
+  }, [data]);
+
+  const resolvedApiKeyRowsRef = useRef<ApiKeyDisplayRow[]>([]);
+  const [resolvedApiKeyRows, setResolvedApiKeyRows] = useState<ApiKeyDisplayRow[]>([]);
+
+  useEffect(() => {
+    if (!data) return;
+    const configApiKeys = useConfigStore.getState().config?.apiKeys;
+    if (!configApiKeys || !Array.isArray(configApiKeys) || configApiKeys.length === 0) {
+      setResolvedApiKeyRows([]);
+      return;
+    }
+
+    let cancelled = false;
+    const accountRows = data.byAccount ?? [];
+    const hashEntries: { trimmed: string; masked: string }[] = configApiKeys
+      .filter((k): k is string => typeof k === 'string' && !!k.trim())
+      .map((k) => ({ trimmed: k.trim(), masked: maskApiKey(k) }));
+
+    Promise.all(hashEntries.map((e) => computeApiKeyHash(e.trimmed))).then((hashes) => {
+      if (cancelled) return;
+
+      const hashToMasked = new Map<string, string>();
+      hashes.forEach((hash, i) => {
+        hashToMasked.set(hash, hashEntries[i].masked);
+      });
+
+      const rows: ApiKeyDisplayRow[] = [];
+      for (const account of accountRows) {
+        if (account.requests <= 0) continue;
+
+        let trustedHash: string | undefined;
+        if (account.apiKeyHash && isTrustedApiKeyHashField('api_key_hash')) {
+          trustedHash = account.apiKeyHash;
+        }
+        if (!trustedHash) continue;
+
+        const maskedLabel = hashToMasked.get(trustedHash) ?? `hash: ${trustedHash.slice(0, 8)}...`;
+
+        rows.push({
+          key: trustedHash,
+          label: maskedLabel,
+          requests: account.requests,
+          successCount: account.successCount,
+          failureCount: account.failureCount,
+          totalTokens: account.totalTokens,
+          modelCount: -1,
+          cost: null,
+          hasModelAttribution: false,
+          childModels: [],
+        });
+      }
+
+      resolvedApiKeyRowsRef.current = rows.sort((a, b) => b.requests - a.requests);
+      setResolvedApiKeyRows(resolvedApiKeyRowsRef.current);
+    });
+
+    return () => { cancelled = true; };
+  }, [data]);
+
+  const providerRows = useMemo<ProviderDisplayRow[]>(() => {
+    if (!data) return [];
+    return data.byProvider
+      .filter((r) => r.requests > 0)
+      .map((row) => {
+        const childModels = data.byModel.filter(
+          (m) => m.provider === row.label || m.key.startsWith(row.key),
+        );
+        return {
+          key: row.key,
+          label: row.label,
+          requests: row.requests,
+          successCount: row.successCount,
+          failureCount: row.failureCount,
+          totalTokens: row.totalTokens,
+          modelCount: new Set(childModels.map((m) => m.label)).size,
+          cost: null,
+          childModels,
+        };
+      });
+  }, [data]);
+
   return {
     loading,
     dataSource,
@@ -381,5 +481,9 @@ export function useUsageDashboard() {
     setServiceUrl,
     refresh: fetchData,
     refreshHeatmap: fetchHeatmap,
+    rpmValue,
+    tpmValue,
+    apiKeyRows: resolvedApiKeyRows,
+    providerRows,
   };
 }

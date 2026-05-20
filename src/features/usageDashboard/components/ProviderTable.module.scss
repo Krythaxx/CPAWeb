@@ -1,0 +1,151 @@
+.wrapper {
+  background: var(--bg-primary, #fff);
+  border: 1px solid var(--border-color, #e5e5e5);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin-top: 12px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-color, #e5e5e5);
+}
+
+.headerTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary, #111827);
+}
+
+.headerHint {
+  font-size: 11px;
+  color: var(--text-tertiary, #9ca3af);
+}
+
+.scroll {
+  overflow-y: auto;
+  max-height: 400px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+
+  th, td {
+    padding: 8px 10px;
+    text-align: left;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--border-color, #e5e5e5);
+  }
+
+  th {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-secondary, #6b7280);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    position: sticky;
+    top: 0;
+    background: var(--bg-primary, #fff);
+    z-index: 1;
+  }
+}
+
+.sortable {
+  cursor: pointer;
+  user-select: none;
+
+  &:hover {
+    color: var(--text-primary, #111827);
+  }
+}
+
+.empty {
+  text-align: center;
+  color: var(--text-tertiary, #9ca3af);
+  padding: 24px 10px !important;
+}
+
+.expandCell {
+  width: 28px;
+  padding: 4px !important;
+}
+
+.expandBtn {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 10px;
+  color: var(--text-secondary, #6b7280);
+  padding: 2px;
+  line-height: 1;
+}
+
+.keyCell {
+  font-family: monospace;
+  font-size: 12px;
+}
+
+.requestCell {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.requestBreakdown {
+  font-size: 11px;
+  color: var(--text-secondary, #6b7280);
+}
+
+.success {
+  color: #10b981;
+}
+
+.failure {
+  color: #ef4444;
+}
+
+.expandedRow {
+  background: var(--bg-secondary, #f9fafb);
+}
+
+.detailRow {
+  background: var(--bg-secondary, #f9fafb);
+}
+
+.detailCell {
+  padding: 0 !important;
+}
+
+.innerTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin: 0;
+
+  th, td {
+    padding: 6px 10px;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color, #e5e5e5);
+  }
+
+  th {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-secondary, #6b7280);
+  }
+}
+
+.modelName {
+  font-family: monospace;
+  font-size: 11px;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
