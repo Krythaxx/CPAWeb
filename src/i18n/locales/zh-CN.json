@@ -1529,7 +1529,7 @@
     "tpm": "TPM",
     "requests_per_minute": "每分钟请求数",
     "tokens_per_minute": "每分钟 Token 数",
-    "source_usage": "来源用量",
+    "source_usage": "提供商统计",
     "col_source": "来源",
     "col_type": "类型"
   }

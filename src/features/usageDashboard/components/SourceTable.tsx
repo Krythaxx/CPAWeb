@@ -10,7 +10,7 @@ function formatNumber(n: number): string {
   return n.toLocaleString();
 }
 
-type SortKey = 'label' | 'requests' | 'tokens' | 'models' | 'cost' | 'type';
+type SortKey = 'label' | 'requests' | 'tokens' | 'models' | 'cost';
 type SortDir = 'asc' | 'desc';
 
 interface SourceTableProps {
@@ -29,7 +29,7 @@ export function SourceTable({ rows, priceTable }: SourceTableProps) {
       setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
     } else {
       setSortKey(key);
-      setSortDir(key === 'label' || key === 'type' ? 'asc' : 'desc');
+      setSortDir(key === 'label' ? 'asc' : 'desc');
     }
   };
 
@@ -59,8 +59,6 @@ export function SourceTable({ rows, priceTable }: SourceTableProps) {
           return dir * (a.totalTokens - b.totalTokens);
         case 'models':
           return dir * (a.modelCount - b.modelCount);
-        case 'type':
-          return dir * a.sourceType.localeCompare(b.sourceType);
         case 'cost': {
           const ca = computeRowCost(a) ?? -1;
           const cb = computeRowCost(b) ?? -1;
@@ -93,9 +91,6 @@ export function SourceTable({ rows, priceTable }: SourceTableProps) {
               <th className={styles.sortable} onClick={() => handleSort('label')}>
                 {t('usage_dashboard.col_source')}{arrow('label')}
               </th>
-              <th className={styles.sortable} onClick={() => handleSort('type')}>
-                {t('usage_dashboard.col_type')}{arrow('type')}
-              </th>
               <th className={styles.sortable} onClick={() => handleSort('requests')}>
                 {t('usage_stats.col_requests')}{arrow('requests')}
               </th>
@@ -114,7 +109,7 @@ export function SourceTable({ rows, priceTable }: SourceTableProps) {
           <tbody>
             {sortedRows.length === 0 ? (
               <tr>
-                <td colSpan={8} className={styles.empty}>
+                <td colSpan={7} className={styles.empty}>
                   {t('usage_stats.empty_table')}
                 </td>
               </tr>
@@ -135,17 +130,6 @@ export function SourceTable({ rows, priceTable }: SourceTableProps) {
                       </td>
                       <td className={styles.nameCell}>{row.label}</td>
                       <td>
-                        <span
-                          className={`${styles.typeBadge} ${
-                            row.sourceType === 'auth-file' ? styles.typeAuthFile : styles.typeProvider
-                          }`}
-                        >
-                          {row.sourceType === 'auth-file'
-                            ? t('usage_dashboard.auth_file_usage')
-                            : t('usage_dashboard.provider_usage')}
-                        </span>
-                      </td>
-                      <td>
                         <span className={styles.requestCell}>
                           {formatNumber(row.requests)}{' '}
                           <span className={styles.requestBreakdown}>
@@ -161,7 +145,7 @@ export function SourceTable({ rows, priceTable }: SourceTableProps) {
                     </tr>
                     {isExpanded && (
                       <tr className={styles.detailRow}>
-                        <td colSpan={8} className={styles.detailCell}>
+                        <td colSpan={7} className={styles.detailCell}>
                           <table className={styles.innerTable}>
                             <thead>
                               <tr>

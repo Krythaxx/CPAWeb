@@ -1526,7 +1526,7 @@
     "tpm": "TPM",
     "requests_per_minute": "Запросов в минуту",
     "tokens_per_minute": "Токенов в минуту",
-    "source_usage": "Использование источников",
+    "source_usage": "Статистика провайдеров",
     "col_source": "Источник",
     "col_type": "Тип"
   }

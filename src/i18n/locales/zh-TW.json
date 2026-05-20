@@ -1555,7 +1555,7 @@
     "tpm": "TPM",
     "requests_per_minute": "每分鐘請求數",
     "tokens_per_minute": "每分鐘 Token 數",
-    "source_usage": "來源用量",
+    "source_usage": "提供商統計",
     "col_source": "來源",
     "col_type": "類型"
   }
