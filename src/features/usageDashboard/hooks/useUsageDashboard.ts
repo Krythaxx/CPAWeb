@@ -720,20 +720,10 @@ export function useUsageDashboard() {
     const baseProviders = data.byProvider.filter((r) => r.requests > 0);
 
     if (memoryDetailsSnapshot.length > 0) {
-      const providerFallback =
-        baseProviders.length === 1
-          ? baseProviders[0].label.toLowerCase()
-          : undefined;
-
       const providerTokenMap = new Map<string, {
         requests: number;
         successCount: number;
         failureCount: number;
-        inputTokens: number;
-        outputTokens: number;
-        reasoningTokens: number;
-        cachedTokens: number;
-        totalTokens: number;
         models: Map<string, {
           requests: number;
           successCount: number;
@@ -746,23 +736,15 @@ export function useUsageDashboard() {
         }>;
       }>();
       for (const detail of memoryDetailsSnapshot) {
-        let prov = (detail.provider ?? '').trim().toLowerCase();
-        if (!prov || prov === 'unknown') {
-          prov = providerFallback ?? prov;
-        }
+        const prov = detail.provider;
         if (!prov) continue;
         let entry = providerTokenMap.get(prov);
         if (!entry) {
-          entry = { requests: 0, successCount: 0, failureCount: 0, inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cachedTokens: 0, totalTokens: 0, models: new Map() };
+          entry = { requests: 0, successCount: 0, failureCount: 0, models: new Map() };
           providerTokenMap.set(prov, entry);
         }
         entry.requests++;
         if (detail.success) { entry.successCount++; } else { entry.failureCount++; }
-        entry.inputTokens += detail.tokens.inputTokens;
-        entry.outputTokens += detail.tokens.outputTokens;
-        entry.reasoningTokens += detail.tokens.reasoningTokens;
-        entry.cachedTokens += detail.tokens.cachedTokens;
-        entry.totalTokens += tokenCountTotal(detail.tokens);
 
         const modelName = detail.model || 'unknown';
         let m = entry.models.get(modelName);
@@ -795,17 +777,12 @@ export function useUsageDashboard() {
           let requests = baseRow?.requests ?? 0;
           let successCount = baseRow?.successCount ?? 0;
           let failureCount = baseRow?.failureCount ?? 0;
-          let providerTotalTokens = 0;
           let childModels: UsageStatsGroupRow[] = [];
 
           if (tokenAgg) {
             requests = requests || tokenAgg.requests;
             successCount = successCount || tokenAgg.successCount;
             failureCount = failureCount || tokenAgg.failureCount;
-            providerTotalTokens = tokenAgg.totalTokens;
-          }
-
-          if (tokenAgg && tokenAgg.models.size > 0) {
             childModels = Array.from(tokenAgg.models.entries())
               .map(([modelName, ms]) => ({
                 key: `${provKey}/${modelName}`,
@@ -823,21 +800,25 @@ export function useUsageDashboard() {
                 provider: provKey,
               }))
               .sort((a, b) => b.requests - a.requests);
-          } else if (baseRow) {
-            childModels = data.byModel.filter(
+          }
+
+          if (childModels.length === 0 && baseRow) {
+            const bModels = data.byModel.filter(
               (m) =>
                 (m.provider === baseRow.label || m.key.startsWith(baseRow.key + '/')) &&
                 !authFileOwnedModelKeys.has(m.key),
             );
+            childModels = bModels;
           }
 
+          const totalTokens = childModels.reduce((s, m) => s + m.totalTokens, 0);
           results.push({
             key: baseRow?.key ?? provKey,
             label: baseRow?.label ?? provKey,
             requests,
             successCount,
             failureCount,
-            totalTokens: providerTotalTokens || (baseRow?.totalTokens ?? 0),
+            totalTokens: totalTokens > 0 ? totalTokens : (baseRow?.totalTokens ?? 0),
             modelCount: childModels.length,
             cost: null,
             childModels,
