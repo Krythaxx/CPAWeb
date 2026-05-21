@@ -1,5 +1,5 @@
 import { useId } from 'react';
-import { ResponsiveContainer, AreaChart, Area } from 'recharts';
+import { ResponsiveContainer, AreaChart, Area, YAxis } from 'recharts';
 import type { TrendBucket } from '@/types/usageStats';
 import styles from './MetricCard.module.scss';
 
@@ -32,10 +32,7 @@ export function MetricCard({
       ? secondaryTrend?.[i]?.value
       : null,
   })).filter((item) => item.value !== null || item.secondary !== null);
-  const hasChartData = Boolean(
-    chartData && chartData.length > 1 &&
-    chartData.some((item) => (item.value ?? 0) > 0 || (item.secondary ?? 0) > 0)
-  );
+  const hasChartData = Boolean(chartData && chartData.length > 1);
 
   return (
     <div className={styles.card}>
@@ -55,6 +52,7 @@ export function MetricCard({
                   <stop offset="100%" stopColor={trendColor} stopOpacity={0} />
                 </linearGradient>
               </defs>
+              <YAxis hide domain={[0, 'auto']} />
               {secondaryTrend && (
                 <Area
                   type="monotone"
