@@ -99,14 +99,14 @@ export function UsageStatsPage() {
           <div className={styles.metricsGrid}>
             <MetricCard
               title={t('usage_dashboard.total_token')}
-              value={s ? formatNumber(s.totalTokens) : '-'}
+              value={s && s.totalTokens > 0 ? formatNumber(s.totalTokens) : '-'}
               subtitle={showTokenColumns && s && s.totalTokens > 0 ? formatCost(calculateCost(s.inputTokens, s.outputTokens, undefined)) : undefined}
               trend={dashboard.metricTrends.totalTokens}
               trendColor="#3b82f6"
             />
             <MetricCard
               title={t('usage_dashboard.input_output')}
-              value={s ? `${formatNumber(s.inputTokens)} / ${formatNumber(s.outputTokens)}` : '-'}
+              value={s && (s.inputTokens > 0 || s.outputTokens > 0) ? `${formatNumber(s.inputTokens)} / ${formatNumber(s.outputTokens)}` : '-'}
               subtitle={
                 s && showTokenColumns
                   ? `${t('usage_dashboard.cached')}: ${formatNumber(s.cachedTokens)} · ${t('usage_dashboard.cache_hit')}: ${(cacheRate * 100).toFixed(1)}%`
