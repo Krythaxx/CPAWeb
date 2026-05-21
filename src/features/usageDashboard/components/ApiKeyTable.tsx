@@ -105,7 +105,7 @@ export function ApiKeyTable({ rows, priceTable }: ApiKeyTableProps) {
             {sortedRows.length === 0 ? (
               <tr>
                 <td colSpan={6} className={styles.empty}>
-                  {t('usage_stats.empty_table')}
+                  {t('usage_dashboard.no_api_key_data')}
                 </td>
               </tr>
             ) : (

@@ -777,6 +777,40 @@ export function useUsageDashboard() {
         }
       }
 
+      const totalReqs = mergedRecentBuckets.reduce((t, b) => t + b.success + b.failed, 0);
+      const totalToks = data.summary.totalTokens;
+
+      if (totalReqs > 0 && totalToks > 0) {
+        const estimatedTpmTrend: TrendBucket[] = mergedRecentBuckets.map((b, i) => {
+          const ts = b.time
+            ? new Date(b.time).getTime()
+            : i * duration;
+          const bucketReqs = b.success + b.failed;
+          const estimatedTokens = totalToks * (bucketReqs / totalReqs);
+          return {
+            timestamp: ts,
+            value: estimatedTokens / bucketMinutes,
+          };
+        });
+
+        const estimatedTotalTrend: TrendBucket[] = mergedRecentBuckets.map((b, i) => {
+          const ts = b.time
+            ? new Date(b.time).getTime()
+            : i * duration;
+          const bucketReqs = b.success + b.failed;
+          return {
+            timestamp: ts,
+            value: totalToks * (bucketReqs / totalReqs),
+          };
+        });
+
+        return {
+          totalTokens: estimatedTotalTrend,
+          rpm: rpmTrend,
+          tpm: estimatedTpmTrend,
+        };
+      }
+
       const firstTs = mergedRecentBuckets[0].time
         ? new Date(mergedRecentBuckets[0].time).getTime()
         : 0;

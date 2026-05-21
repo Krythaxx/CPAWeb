@@ -1514,6 +1514,7 @@
     "model_count": "模型数",
     "cost": "花费",
     "no_model_detail": "暂无模型详情",
+    "no_api_key_data": "当前流量未通过独立 API Key 路由，用量数据已归入 Source 表",
     "model_usage": "各模型用量",
     "columns": "列",
     "visible_columns": "显示列",

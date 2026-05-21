@@ -2,6 +2,7 @@ import axios from 'axios';
 import { apiClient } from './client';
 import type {
   UsageStatsResponse,
+  UsageStatsSummary,
   DashboardTimeRange,
   UsageStatsGroupRow,
   DataCoverageInfo,
@@ -1152,12 +1153,14 @@ function rangeStartTimestamp(r: DashboardTimeRange): number | null {
 }
 
 function rangeEndTimestamp(r: DashboardTimeRange): number | null {
+  const now = Date.now();
   if (r === 'yesterday') {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
     return d.getTime();
   }
-  return null;
+  if (r === 'all') return null;
+  return now;
 }
 
 export function filterBucketsByRange(
@@ -1469,10 +1472,11 @@ export function normalizeMemoryStats(
     })),
   ] as UsageStatsGroupRow[];
 
-  return {
-    source: 'memory',
-    range: selectedRange ?? 'all',
-    summary: {
+  const effectiveRange = selectedRange ?? 'all';
+  const periodStartMs = rangeStartTimestamp(effectiveRange) ?? undefined;
+  const periodEndMs = rangeEndTimestamp(effectiveRange) ?? undefined;
+
+  const summary: UsageStatsSummary = {
       totalRequests,
       successCount: totalSuccess,
       failureCount: totalFailure,
@@ -1483,7 +1487,19 @@ export function normalizeMemoryStats(
       cachedTokens: summaryTokens.cachedTokens,
       cacheTokens: summaryTokens.cachedTokens,
       totalTokens: tokenCountTotal(summaryTokens),
-    },
+    };
+
+  if (periodStartMs != null) {
+    summary.periodStartMs = periodStartMs;
+  }
+  if (periodEndMs != null) {
+    summary.periodEndMs = periodEndMs;
+  }
+
+  return {
+    source: 'memory' as const,
+    range: effectiveRange,
+    summary,
     byModel,
     byProvider,
     byAccount,

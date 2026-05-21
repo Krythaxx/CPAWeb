@@ -1540,6 +1540,7 @@
     "model_count": "模型數",
     "cost": "花費",
     "no_model_detail": "暫無模型詳情",
+    "no_api_key_data": "當前流量未通過獨立 API Key 路由，用量資料已歸入 Source 表",
     "model_usage": "各模型用量",
     "columns": "列",
     "visible_columns": "顯示列",

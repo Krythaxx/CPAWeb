@@ -24,7 +24,7 @@ export function UsageStatsPage() {
   const { t } = useTranslation();
   const dashboard = useUsageDashboard();
   const { table: priceTable, updateEntry, removeEntry, clearAll } = usePriceTable();
-  const [autoRefreshInterval, setAutoRefreshInterval] = useState(10);
+  const [autoRefreshInterval, setAutoRefreshInterval] = useState(30);
   const [priceModalOpen, setPriceModalOpen] = useState(false);
 
   const autoRefresh = useAutoRefresh(() => {
