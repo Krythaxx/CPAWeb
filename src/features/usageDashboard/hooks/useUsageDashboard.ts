@@ -562,7 +562,7 @@ export function useUsageDashboard() {
     return accountRows
       .filter((account) => account.key.startsWith('auth-file/') && account.requests > 0)
       .map((account) => {
-        const childModels = data.byModel.filter(
+        const childModels = account.childModels ?? data.byModel.filter(
           (m) => m.provider === account.provider,
         );
         return {
@@ -583,11 +583,18 @@ export function useUsageDashboard() {
 
   const providerRows = useMemo<ProviderDisplayRow[]>(() => {
     if (!data) return [];
+    const authFileOwnedModelKeys = new Set(
+      data.byAccount
+        .filter((a) => a.key.startsWith('auth-file/') && a.childModels)
+        .flatMap((a) => a.childModels!.map((m) => m.key))
+    );
     return data.byProvider
       .filter((r) => r.requests > 0)
       .map((row) => {
         const childModels = data.byModel.filter(
-          (m) => m.provider === row.label || m.key.startsWith(row.key),
+          (m) =>
+            (m.provider === row.label || m.key.startsWith(row.key)) &&
+            !authFileOwnedModelKeys.has(m.key),
         );
         return {
           key: row.key,
@@ -688,7 +695,29 @@ export function useUsageDashboard() {
         }
       }
 
-      return { rpm: rpmTrend };
+      const result: { totalTokens?: TrendBucket[]; inputTokens?: TrendBucket[]; outputTokens?: TrendBucket[]; rpm?: TrendBucket[]; tpm?: TrendBucket[] } = { rpm: rpmTrend };
+
+      if (data.summary.totalTokens > 0) {
+        const lastTs = rpmTrend[rpmTrend.length - 1]?.timestamp ?? duration;
+        result.totalTokens = [
+          { timestamp: lastTs - duration, value: data.summary.totalTokens },
+          { timestamp: lastTs, value: data.summary.totalTokens },
+        ];
+        if (data.summary.inputTokens > 0) {
+          result.inputTokens = [
+            { timestamp: lastTs - duration, value: data.summary.inputTokens },
+            { timestamp: lastTs, value: data.summary.inputTokens },
+          ];
+        }
+        if (data.summary.outputTokens > 0) {
+          result.outputTokens = [
+            { timestamp: lastTs - duration, value: data.summary.outputTokens },
+            { timestamp: lastTs, value: data.summary.outputTokens },
+          ];
+        }
+      }
+
+      return result;
     }
 
     if (mergedRecentBuckets.length === 1) {
@@ -700,6 +729,24 @@ export function useUsageDashboard() {
           { timestamp: ts, value: rpm },
           { timestamp: ts + duration, value: rpm },
         ],
+      };
+    }
+
+    if (data.summary.totalTokens > 0) {
+      const ts = duration;
+      return {
+        totalTokens: [
+          { timestamp: 0, value: data.summary.totalTokens },
+          { timestamp: ts, value: data.summary.totalTokens },
+        ],
+        inputTokens: data.summary.inputTokens > 0 ? [
+          { timestamp: 0, value: data.summary.inputTokens },
+          { timestamp: ts, value: data.summary.inputTokens },
+        ] : undefined,
+        outputTokens: data.summary.outputTokens > 0 ? [
+          { timestamp: 0, value: data.summary.outputTokens },
+          { timestamp: ts, value: data.summary.outputTokens },
+        ] : undefined,
       };
     }
 

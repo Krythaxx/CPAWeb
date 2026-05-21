@@ -1248,6 +1248,9 @@ export function normalizeMemoryStats(
 
     const tokens = readAggregateTokenCounts(record);
 
+    const authChildModelMap = new Map<string, UsageStatsGroupRow>();
+    addModelRowsFromRecord(authChildModelMap, providerKey, record);
+
     const row: NormalizedAuthFileRow = {
       key,
       label,
@@ -1261,13 +1264,12 @@ export function normalizeMemoryStats(
       reasoningTokens: tokens.reasoningTokens,
       cachedTokens: tokens.cachedTokens,
       totalTokens: tokenCountTotal(tokens),
-      childModels: [],
+      childModels: Array.from(authChildModelMap.values()),
     };
 
     authFileRequestTotal += success + failure;
     authFileRows.push(row);
 
-    addProviderUsage(providerKey, success, failure, record);
     addModelRowsFromRecord(byModelMap, providerKey, record);
   });
 
@@ -1277,11 +1279,16 @@ export function normalizeMemoryStats(
   const providerRequestTotal = byProvider.reduce(
     (total, row) => total + row.requests, 0,
   );
-  const totalRequests = Math.max(apiKeyRequestTotal, authFileRequestTotal, providerRequestTotal);
-  const totalSuccess = byProvider.reduce((t, r) => t + r.successCount, 0);
-  const totalFailure = byProvider.reduce((t, r) => t + r.failureCount, 0);
+  const totalRequests = Math.max(
+    apiKeyRequestTotal + authFileRequestTotal,
+    providerRequestTotal + authFileRequestTotal,
+  );
+  const totalSuccess = byProvider.reduce((t, r) => t + r.successCount, 0)
+    + authFileRows.reduce((t, r) => t + r.successCount, 0);
+  const totalFailure = byProvider.reduce((t, r) => t + r.failureCount, 0)
+    + authFileRows.reduce((t, r) => t + r.failureCount, 0);
 
-  const summaryTokens = byProvider.reduce<TokenCounts>(
+  const providerTokenCounts = byProvider.reduce<TokenCounts>(
     (totalTokens, row) =>
       addTokenCountValues(totalTokens, {
         inputTokens: row.inputTokens,
@@ -1292,6 +1299,18 @@ export function normalizeMemoryStats(
       }),
     emptyTokenCounts(),
   );
+  const authFileTokenCounts = authFileRows.reduce<TokenCounts>(
+    (total, row) =>
+      addTokenCountValues(total, {
+        inputTokens: row.inputTokens,
+        outputTokens: row.outputTokens,
+        reasoningTokens: row.reasoningTokens,
+        cachedTokens: row.cachedTokens,
+        totalTokens: row.totalTokens,
+      }),
+    emptyTokenCounts(),
+  );
+  const summaryTokens = addTokenCountValues(providerTokenCounts, authFileTokenCounts);
 
   const byAccount = [
     ...Array.from(apiKeyRowMap.values()).map((row) => ({
@@ -1325,6 +1344,7 @@ export function normalizeMemoryStats(
       totalTokens: row.totalTokens,
       provider: row.provider,
       authIndex: row.authIndex,
+      childModels: row.childModels.length > 0 ? row.childModels : undefined,
     })),
   ] as UsageStatsGroupRow[];
 
@@ -1503,14 +1523,31 @@ export function augmentMemoryStatsWithRequestLogs(
     return data;
   }
 
-  const shouldFillProviderTokens = data.summary.totalTokens === 0;
-  const shouldAddModelRequests = data.byModel.length === 0;
+  const shouldFillTokens = data.summary.totalTokens === 0;
+  const shouldAddModels = data.byModel.length === 0;
   const providerMap = new Map(
     data.byProvider.map((row) => [row.key, { ...row }] as const)
   );
   const modelMap = new Map(
     data.byModel.map((row) => [row.key, { ...row }] as const)
   );
+
+  const authFileAccounts = data.byAccount.filter(
+    (a) => a.key.startsWith('auth-file/') && a.requests > 0
+  );
+  const apiKeyAccounts = data.byAccount.filter(
+    (a) => a.key.startsWith('api-key/') && a.requests > 0
+  );
+  const singleAuthFile =
+    authFileAccounts.length === 1 && apiKeyAccounts.length === 0
+      ? { ...authFileAccounts[0] }
+      : null;
+
+  const byAccount = data.byAccount.map((a) => {
+    if (singleAuthFile && a.key === singleAuthFile.key) return singleAuthFile;
+    return { ...a };
+  });
+
   const providerFallback =
     data.byProvider.filter((row) => row.requests > 0).length === 1
       ? data.byProvider.find((row) => row.requests > 0)?.key
@@ -1521,9 +1558,16 @@ export function augmentMemoryStatsWithRequestLogs(
     const providerKey = providerMap.has(rawProviderKey)
       ? rawProviderKey
       : providerFallback || rawProviderKey;
-    const providerRow = providerMap.get(providerKey);
-    if (providerRow && shouldFillProviderTokens) {
-      applyTokenCounts(providerRow, detail.tokens);
+
+    if (shouldFillTokens) {
+      if (singleAuthFile) {
+        applyTokenCounts(singleAuthFile, detail.tokens);
+      } else {
+        const providerRow = providerMap.get(providerKey);
+        if (providerRow) {
+          applyTokenCounts(providerRow, detail.tokens);
+        }
+      }
     }
 
     if (!detail.model) {
@@ -1542,14 +1586,32 @@ export function augmentMemoryStatsWithRequestLogs(
       modelMap.set(modelKey, modelRow);
     }
 
-    if (shouldAddModelRequests) {
+    if (shouldAddModels) {
       addCounts(modelRow, detail.success ? 1 : 0, detail.success ? 0 : 1);
     }
     applyTokenCounts(modelRow, detail.tokens);
+
+    if (singleAuthFile) {
+      if (!singleAuthFile.childModels) {
+        singleAuthFile.childModels = [];
+      }
+      const existingChild = singleAuthFile.childModels.find(
+        (m) => m.key === modelKey
+      );
+      if (existingChild) {
+        applyTokenCounts(existingChild, detail.tokens);
+        if (shouldAddModels) {
+          addCounts(existingChild, detail.success ? 1 : 0, detail.success ? 0 : 1);
+        }
+      } else {
+        singleAuthFile.childModels.push({ ...modelRow });
+      }
+    }
   });
 
   const byProvider = Array.from(providerMap.values());
-  const summaryTokens = byProvider.reduce<TokenCounts>(
+
+  const providerTokenCounts = byProvider.reduce<TokenCounts>(
     (totalTokens, row) =>
       addTokenCountValues(totalTokens, {
         inputTokens: row.inputTokens,
@@ -1560,19 +1622,30 @@ export function augmentMemoryStatsWithRequestLogs(
       }),
     emptyTokenCounts()
   );
+  const authFileTokenCounts = singleAuthFile
+    ? {
+        inputTokens: singleAuthFile.inputTokens,
+        outputTokens: singleAuthFile.outputTokens,
+        reasoningTokens: singleAuthFile.reasoningTokens,
+        cachedTokens: singleAuthFile.cachedTokens,
+        totalTokens: singleAuthFile.totalTokens,
+      }
+    : emptyTokenCounts();
+  const summaryTokens = addTokenCountValues(providerTokenCounts, authFileTokenCounts);
 
   return {
     ...data,
+    byAccount,
     summary: {
       ...data.summary,
-      inputTokens: shouldFillProviderTokens ? summaryTokens.inputTokens : data.summary.inputTokens,
-      outputTokens: shouldFillProviderTokens ? summaryTokens.outputTokens : data.summary.outputTokens,
-      reasoningTokens: shouldFillProviderTokens
+      inputTokens: shouldFillTokens ? summaryTokens.inputTokens : data.summary.inputTokens,
+      outputTokens: shouldFillTokens ? summaryTokens.outputTokens : data.summary.outputTokens,
+      reasoningTokens: shouldFillTokens
         ? summaryTokens.reasoningTokens
         : data.summary.reasoningTokens,
-      cachedTokens: shouldFillProviderTokens ? summaryTokens.cachedTokens : data.summary.cachedTokens,
-      cacheTokens: shouldFillProviderTokens ? summaryTokens.cachedTokens : data.summary.cacheTokens,
-      totalTokens: shouldFillProviderTokens ? tokenCountTotal(summaryTokens) : data.summary.totalTokens,
+      cachedTokens: shouldFillTokens ? summaryTokens.cachedTokens : data.summary.cachedTokens,
+      cacheTokens: shouldFillTokens ? summaryTokens.cachedTokens : data.summary.cacheTokens,
+      totalTokens: shouldFillTokens ? tokenCountTotal(summaryTokens) : data.summary.totalTokens,
     },
     byProvider,
     byModel: Array.from(modelMap.values()),

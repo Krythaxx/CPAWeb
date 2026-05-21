@@ -42,6 +42,10 @@ function formatTimeRange(start: number, end: number): string {
   return `${fmt(s)} - ${fmt(e)}`;
 }
 
+interface DisplayBucket extends HeatmapBucket {
+  isIdle: boolean;
+}
+
 export function ApiKeyHeatmap({
   totalRequests,
   successRate,
@@ -77,18 +81,19 @@ export function ApiKeyHeatmap({
     return () => observer.disconnect();
   }, []);
 
-  const displayBuckets = useMemo(() => {
+  const displayBuckets = useMemo<DisplayBucket[]>(() => {
     const duration = RECENT_REQUEST_BLOCK_DURATION_MS;
     const timelineEnd =
       buckets.length > 0
         ? buckets[buckets.length - 1].timeEnd + Math.max(0, colCount - buckets.length) * duration
         : HEATMAP_IDLE_REFERENCE_TIME;
-    const idleBucket = (i: number): HeatmapBucket => ({
+    const idleBucket = (i: number): DisplayBucket => ({
       timeStart: timelineEnd - (colCount - i) * duration,
       timeEnd: timelineEnd - (colCount - i - 1) * duration,
       success: 0,
       failed: 0,
       successRate: 0,
+      isIdle: true,
     });
 
     if (buckets.length === 0) {
@@ -96,13 +101,14 @@ export function ApiKeyHeatmap({
     }
 
     if (buckets.length < colCount) {
+      const realBuckets = buckets.map<DisplayBucket>((b) => ({ ...b, isIdle: false }));
       const padding = Array.from({ length: colCount - buckets.length }, (_, i) =>
         idleBucket(buckets.length + i),
       );
-      return [...buckets, ...padding];
+      return [...realBuckets, ...padding];
     }
 
-    return buckets.slice(-colCount);
+    return buckets.slice(-colCount).map<DisplayBucket>((b) => ({ ...b, isIdle: false }));
   }, [buckets, colCount]);
 
   const handleMouseEnter = useCallback(
@@ -171,13 +177,12 @@ export function ApiKeyHeatmap({
       <div className={styles.grid} ref={gridRef}>
         {displayBuckets.map((bucket, i) => {
           const total = bucket.success + bucket.failed;
-          const isIdle = total === 0 && i >= buckets.length;
           return (
             <div
               key={i}
               className={styles.dot}
               style={{ backgroundColor: dotColor(bucket.successRate, total) }}
-              onMouseEnter={(e) => handleMouseEnter(e, bucket, isIdle)}
+              onMouseEnter={(e) => handleMouseEnter(e, bucket, bucket.isIdle)}
               onMouseLeave={handleMouseLeave}
             />
           );
