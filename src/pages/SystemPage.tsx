@@ -13,7 +13,9 @@ import {
   useThemeStore,
 } from '@/stores';
 import { configApi, versionApi } from '@/services/api';
+import { configFileApi } from '@/services/api/configFile';
 import { apiKeysApi } from '@/services/api/apiKeys';
+import { parseDocument } from 'yaml';
 import { classifyModels } from '@/utils/models';
 import { STORAGE_KEY_AUTH } from '@/utils/constants';
 import { INLINE_LOGO_JPEG } from '@/assets/logoInline';
@@ -123,7 +125,27 @@ export function SystemPage() {
     [i18n.language]
   );
   const groupedModels = useMemo(() => classifyModels(models, { otherLabel }), [models, otherLabel]);
-  const panelRepoUrl = useMemo(() => resolvePanelRepoUrl(config?.raw), [config?.raw]);
+  const [panelRepoUrl, setPanelRepoUrl] = useState(() => resolvePanelRepoUrl(config?.raw));
+
+  useEffect(() => {
+    setPanelRepoUrl(resolvePanelRepoUrl(config?.raw));
+  }, [config?.raw]);
+
+  useEffect(() => {
+    configFileApi.fetchConfigYaml().then((yaml) => {
+      try {
+        const doc = parseDocument(yaml);
+        const rm = doc.toJS?.()?.['remote-management'];
+        if (rm && typeof rm === 'object' && !Array.isArray(rm)) {
+          const section = rm as Record<string, unknown>;
+          const url = section['panel-github-repository'] ?? section['panel-repo'];
+          if (typeof url === 'string' && url.trim()) {
+            setPanelRepoUrl(url.trim());
+          }
+        }
+      } catch { /* ignore parse errors */ }
+    }).catch(() => { /* ignore fetch errors */ });
+  }, []);
   const requestLogEnabled = config?.requestLog ?? false;
   const requestLogDirty = requestLogDraft !== requestLogEnabled;
   const canEditRequestLog = auth.connectionStatus === 'connected' && Boolean(config);
