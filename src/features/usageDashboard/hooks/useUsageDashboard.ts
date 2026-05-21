@@ -195,13 +195,6 @@ function buildTwoPointTrend(start: number, end: number, value: number): TrendBuc
   ];
 }
 
-function buildFlatTwoPointTrend(start: number, end: number, value: number): TrendBucket[] {
-  return [
-    { timestamp: start, value },
-    { timestamp: end, value },
-  ];
-}
-
 function buildFallbackTokenTrends(
   summary: UsageStatsSummary,
   start: number,
@@ -222,7 +215,7 @@ function buildFallbackTokenTrends(
     totalTokens: buildTwoPointTrend(start, end, summary.totalTokens),
     inputTokens: buildTwoPointTrend(start, end, summary.inputTokens),
     outputTokens: buildTwoPointTrend(start, end, summary.outputTokens),
-    tpm: buildFlatTwoPointTrend(start, end, tpm),
+    tpm: buildTwoPointTrend(start, end, tpm),
   };
 }
 
@@ -810,6 +803,9 @@ export function useUsageDashboard() {
             successCount = successCount || tokenAgg.successCount;
             failureCount = failureCount || tokenAgg.failureCount;
             providerTotalTokens = tokenAgg.totalTokens;
+          }
+
+          if (tokenAgg && tokenAgg.models.size > 0) {
             childModels = Array.from(tokenAgg.models.entries())
               .map(([modelName, ms]) => ({
                 key: `${provKey}/${modelName}`,
@@ -827,25 +823,21 @@ export function useUsageDashboard() {
                 provider: provKey,
               }))
               .sort((a, b) => b.requests - a.requests);
-          }
-
-          if (childModels.length === 0 && baseRow) {
-            const bModels = data.byModel.filter(
+          } else if (baseRow) {
+            childModels = data.byModel.filter(
               (m) =>
                 (m.provider === baseRow.label || m.key.startsWith(baseRow.key + '/')) &&
                 !authFileOwnedModelKeys.has(m.key),
             );
-            childModels = bModels;
           }
 
-          const childTotalTokens = childModels.reduce((s, m) => s + m.totalTokens, 0);
           results.push({
             key: baseRow?.key ?? provKey,
             label: baseRow?.label ?? provKey,
             requests,
             successCount,
             failureCount,
-            totalTokens: providerTotalTokens || childTotalTokens || (baseRow?.totalTokens ?? 0),
+            totalTokens: providerTotalTokens || (baseRow?.totalTokens ?? 0),
             modelCount: childModels.length,
             cost: null,
             childModels,

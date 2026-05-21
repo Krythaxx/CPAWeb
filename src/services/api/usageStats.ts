@@ -1716,13 +1716,10 @@ export function augmentMemoryStatsWithRequestLogs(
 
   const apiKeyToProvider = new Map<string, string>();
   for (const acct of data.byAccount) {
-    if (acct.apiKeyIdentity && acct.key.startsWith('api-key/')) {
-      const provider = data.byProvider.find(
-        (p) => p.requests > 0 && acct.key.startsWith('api-key/')
-      );
-      if (provider) {
-        apiKeyToProvider.set(acct.apiKeyIdentity, provider.key);
-      }
+    if (!acct.key.startsWith('api-key/') || !acct.apiKeyHash) continue;
+    const childProvider = (acct.childModels ?? []).find((m) => m.provider)?.provider;
+    if (childProvider) {
+      apiKeyToProvider.set(acct.apiKeyHash, childProvider);
     }
   }
 
