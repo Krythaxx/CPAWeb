@@ -717,33 +717,110 @@ export function useUsageDashboard() {
 
   const providerRows = useMemo<ProviderDisplayRow[]>(() => {
     if (!data) return [];
+
     const authFileOwnedModelKeys = new Set(
       data.byAccount
         .filter((a) => a.key.startsWith('auth-file/') && a.childModels)
         .flatMap((a) => a.childModels!.map((m) => m.key))
     );
-    return data.byProvider
-      .filter((r) => r.requests > 0)
-      .map((row) => {
-        const childModels = data.byModel.filter(
-          (m) =>
-            (m.provider === row.label || m.key.startsWith(row.key + '/')) &&
-            !authFileOwnedModelKeys.has(m.key),
-        );
-        const childTotalTokens = childModels.reduce((sum, m) => sum + m.totalTokens, 0);
-        return {
-          key: row.key,
-          label: row.label,
-          requests: row.requests,
-          successCount: row.successCount,
-          failureCount: row.failureCount,
-          totalTokens: childTotalTokens > 0 ? childTotalTokens : row.totalTokens,
-          modelCount: new Set(childModels.map((m) => m.label)).size,
-          cost: null,
-          childModels,
-        };
-      });
-  }, [data]);
+
+    const baseProviders = data.byProvider.filter((r) => r.requests > 0);
+
+    if (memoryDetailsSnapshot.length > 0) {
+      const providerAgg = new Map<string, {
+        requests: number;
+        successCount: number;
+        failureCount: number;
+        models: Map<string, {
+          requests: number;
+          successCount: number;
+          failureCount: number;
+          inputTokens: number;
+          outputTokens: number;
+          reasoningTokens: number;
+          cachedTokens: number;
+          totalTokens: number;
+        }>;
+      }>();
+      for (const detail of memoryDetailsSnapshot) {
+        const prov = detail.provider || 'unknown';
+        let entry = providerAgg.get(prov);
+        if (!entry) {
+          entry = { requests: 0, successCount: 0, failureCount: 0, models: new Map() };
+          providerAgg.set(prov, entry);
+        }
+        entry.requests++;
+        if (detail.success) { entry.successCount++; } else { entry.failureCount++; }
+
+        const modelName = detail.model || 'unknown';
+        let m = entry.models.get(modelName);
+        if (!m) {
+          m = { requests: 0, successCount: 0, failureCount: 0, inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cachedTokens: 0, totalTokens: 0 };
+          entry.models.set(modelName, m);
+        }
+        m.requests++;
+        if (detail.success) { m.successCount++; } else { m.failureCount++; }
+        m.inputTokens += detail.tokens.inputTokens;
+        m.outputTokens += detail.tokens.outputTokens;
+        m.reasoningTokens += detail.tokens.reasoningTokens;
+        m.cachedTokens += detail.tokens.cachedTokens;
+        m.totalTokens += tokenCountTotal(detail.tokens);
+      }
+
+      return Array.from(providerAgg.entries())
+        .map(([provLabel, stats]) => {
+          const childModels: UsageStatsGroupRow[] = Array.from(stats.models.entries())
+            .map(([modelName, ms]) => ({
+              key: `${provLabel}/${modelName}`,
+              label: modelName,
+              requests: ms.requests,
+              successCount: ms.successCount,
+              failureCount: ms.failureCount,
+              successRate: ms.requests > 0 ? ms.successCount / ms.requests : 0,
+              inputTokens: ms.inputTokens,
+              outputTokens: ms.outputTokens,
+              reasoningTokens: ms.reasoningTokens,
+              cachedTokens: ms.cachedTokens,
+              cacheTokens: ms.cachedTokens,
+              totalTokens: ms.totalTokens,
+              provider: provLabel,
+            }))
+            .sort((a, b) => b.requests - a.requests);
+          return {
+            key: provLabel,
+            label: provLabel,
+            requests: stats.requests,
+            successCount: stats.successCount,
+            failureCount: stats.failureCount,
+            totalTokens: childModels.reduce((s, m) => s + m.totalTokens, 0),
+            modelCount: childModels.length,
+            cost: null,
+            childModels,
+          };
+        })
+        .sort((a, b) => b.requests - a.requests);
+    }
+
+    return baseProviders.map((row) => {
+      const childModels = data.byModel.filter(
+        (m) =>
+          (m.provider === row.label || m.key.startsWith(row.key + '/')) &&
+          !authFileOwnedModelKeys.has(m.key),
+      );
+      const childTotalTokens = childModels.reduce((sum, m) => sum + m.totalTokens, 0);
+      return {
+        key: row.key,
+        label: row.label,
+        requests: row.requests,
+        successCount: row.successCount,
+        failureCount: row.failureCount,
+        totalTokens: childTotalTokens > 0 ? childTotalTokens : row.totalTokens,
+        modelCount: new Set(childModels.map((m) => m.label)).size,
+        cost: null,
+        childModels,
+      };
+    });
+  }, [data, memoryDetailsSnapshot]);
 
   const sourceRows = useMemo<SourceDisplayRow[]>(() => {
     const auths = authFileRows.map((r) => ({
