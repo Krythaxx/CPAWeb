@@ -99,7 +99,7 @@ export function UsageStatsPage() {
               title={t('usage_dashboard.total_token')}
               value={s ? formatNumber(s.totalTokens) : '-'}
               subtitle={showTokenColumns && s && s.totalTokens > 0 ? formatCost(calculateCost(s.inputTokens, s.outputTokens, undefined)) : undefined}
-              trend={s?.tokenTrend}
+              trend={dashboard.metricTrends.totalTokens}
               trendColor="#3b82f6"
             />
             <MetricCard
@@ -112,23 +112,23 @@ export function UsageStatsPage() {
                     ? t('usage_stats.token_unavailable')
                     : undefined
               }
-              trend={s?.inputOutputTrend}
+              trend={dashboard.metricTrends.inputTokens}
               trendColor="#3b82f6"
-              secondaryTrend={s?.cacheTrend}
+              secondaryTrend={dashboard.metricTrends.outputTokens}
               secondaryColor="#10b981"
             />
             <MetricCard
               title={t('usage_dashboard.rpm')}
               value={dashboard.rpmValue}
               subtitle={t('usage_dashboard.requests_per_minute')}
-              trend={s?.requestTrend}
+              trend={dashboard.metricTrends.rpm}
               trendColor="#f97316"
             />
             <MetricCard
               title={t('usage_dashboard.tpm')}
               value={dashboard.tpmValue}
               subtitle={t('usage_dashboard.tokens_per_minute')}
-              trend={s?.tokenTrend}
+              trend={dashboard.metricTrends.tpm}
               trendColor="#8b5cf6"
             />
           </div>

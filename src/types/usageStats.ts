@@ -39,6 +39,8 @@ export interface UsageStatsGroupRow {
   provider?: string;
   authIndex?: number;
   apiKeyHash?: string;
+  apiKeyIdentity?: string;
+  childModels?: UsageStatsGroupRow[];
 }
 
 export interface UsageStatsServiceInfo {

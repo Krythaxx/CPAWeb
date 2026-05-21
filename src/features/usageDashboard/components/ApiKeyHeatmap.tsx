@@ -113,25 +113,23 @@ export function ApiKeyHeatmap({
 
       const dotX = e.clientX - gridRect.left;
       const dotY = e.clientY - gridRect.top;
+      const gridTopInCard = gridRect.top - cardRect.top;
       const tooltipOffset = 12;
       const tooltipWidth = tooltipRef.current?.offsetWidth ?? 180;
       const tooltipHeight = tooltipRef.current?.offsetHeight ?? 60;
 
-      let x = dotX - tooltipWidth / 2;
-      let y = dotY + tooltipOffset;
+      let x = gridRect.left - cardRect.left + dotX - tooltipWidth / 2;
+      let y = gridTopInCard + dotY + DOT_SIZE + tooltipOffset;
 
-      const cardLeft = gridRect.left - cardRect.left;
-      const cardRight = cardRect.width;
+      if (x < 0) x = 0;
+      if (x + tooltipWidth > cardRect.width) x = cardRect.width - tooltipWidth;
 
-      if (x < cardLeft) x = cardLeft;
-      if (x + tooltipWidth > cardRight) x = cardRight - tooltipWidth;
-
-      const gridBottomInCard = gridRect.top - cardRect.top + gridRect.height;
-      if (y + tooltipHeight > gridBottomInCard + 8) {
-        if (dotY - tooltipOffset - tooltipHeight >= -(DOT_SIZE + GAP)) {
-          y = dotY - tooltipOffset - tooltipHeight;
+      if (y + tooltipHeight > cardRect.height) {
+        const flippedY = gridTopInCard + dotY - tooltipOffset - tooltipHeight;
+        if (flippedY >= 0) {
+          y = flippedY;
         } else {
-          y = Math.max(0, gridBottomInCard + 8 - tooltipHeight);
+          y = Math.max(0, cardRect.height - tooltipHeight);
         }
       }
 

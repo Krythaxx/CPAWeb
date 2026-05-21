@@ -9,6 +9,8 @@ import {
   deriveCoveredMinutes,
   deriveCoveredMinutesFromBuckets,
   computeApiKeyHash,
+  maskApiKeyForDisplay,
+  tokenCountTotal,
   type PrecomputedApiKeyHashMap,
   type MemoryRequestLogDetail,
 } from '@/services/api/usageStats';
@@ -22,6 +24,7 @@ import type {
   AuthFileDisplayRow,
   ProviderDisplayRow,
   SourceDisplayRow,
+  TrendBucket,
 } from '@/types/usageStats';
 import {
   normalizeRecentRequestBuckets,
@@ -203,7 +206,7 @@ async function buildApiKeyHashMap(configuredApiKeys: string[] | undefined): Prom
   await Promise.all(
     keys.map(async (k) => {
       const trimmed = k.trim();
-      const masked = `${trimmed.slice(0, 5)}***${trimmed.slice(-4)}`;
+      const masked = maskApiKeyForDisplay(trimmed);
       rawToMasked.set(trimmed, masked);
       try {
         const hash = await computeApiKeyHash(trimmed);
@@ -234,10 +237,10 @@ function buildHeatmapBuckets(buckets: RecentRequestBucket[]): HeatmapBucket[] {
   });
 }
 
-function buildMergedBucketsFromRaw(raw: unknown): RecentRequestBucket[] {
+function buildCanonicalBucketsFromRaw(raw: unknown): RecentRequestBucket[] {
   const payload = raw as { apiKeyUsage?: Record<string, Record<string, unknown>>; authFiles?: unknown[] };
-  const groups: RecentRequestBucket[][] = [];
 
+  const apiKeyGroups: RecentRequestBucket[][] = [];
   if (payload?.apiKeyUsage && typeof payload.apiKeyUsage === 'object') {
     Object.values(payload.apiKeyUsage).forEach((providerEntries) => {
       if (!providerEntries || typeof providerEntries !== 'object') return;
@@ -247,7 +250,7 @@ function buildMergedBucketsFromRaw(raw: unknown): RecentRequestBucket[] {
         const recentKeys = ['recent_requests', 'recentRequests'];
         for (const rk of recentKeys) {
           if (Array.isArray(record[rk])) {
-            groups.push(normalizeRecentRequestBuckets(record[rk]));
+            apiKeyGroups.push(normalizeRecentRequestBuckets(record[rk]));
             return;
           }
         }
@@ -255,6 +258,11 @@ function buildMergedBucketsFromRaw(raw: unknown): RecentRequestBucket[] {
     });
   }
 
+  if (apiKeyGroups.length > 0) {
+    return mergeRecentRequestBucketGroups(apiKeyGroups);
+  }
+
+  const authFileGroups: RecentRequestBucket[][] = [];
   if (Array.isArray(payload?.authFiles)) {
     payload.authFiles.forEach((file) => {
       if (!file || typeof file !== 'object') return;
@@ -262,14 +270,18 @@ function buildMergedBucketsFromRaw(raw: unknown): RecentRequestBucket[] {
       const recentKeys = ['recent_requests', 'recentRequests'];
       for (const rk of recentKeys) {
         if (Array.isArray(record[rk])) {
-          groups.push(normalizeRecentRequestBuckets(record[rk]));
+          authFileGroups.push(normalizeRecentRequestBuckets(record[rk]));
           return;
         }
       }
     });
   }
 
-  return mergeRecentRequestBucketGroups(groups);
+  if (authFileGroups.length > 0) {
+    return mergeRecentRequestBucketGroups(authFileGroups);
+  }
+
+  return [];
 }
 
 export function useUsageDashboard() {
@@ -289,6 +301,7 @@ export function useUsageDashboard() {
   const [lastRefreshTime, setLastRefreshTime] = useState<string | null>(null);
   const [heatmapBuckets, setHeatmapBuckets] = useState<HeatmapBucket[]>([]);
   const [mergedRecentBuckets, setMergedRecentBuckets] = useState<RecentRequestBucket[]>([]);
+  const [memoryDetailsSnapshot, setMemoryDetailsSnapshot] = useState<MemoryRequestLogDetail[]>([]);
 
   const abortRef = useRef<AbortController | null>(null);
   const memoryUsageDetailsRef = useRef<MemoryRequestLogDetail[]>(
@@ -343,7 +356,7 @@ export function useUsageDashboard() {
       const rawMemory = await usageStatsApi.fetchMemoryStats();
       if (ac.signal.aborted) return;
 
-      setMergedRecentBuckets(buildMergedBucketsFromRaw(rawMemory));
+      setMergedRecentBuckets(buildCanonicalBucketsFromRaw(rawMemory));
 
       const configuredApiKeys = useConfigStore.getState().config?.apiKeys as string[] | undefined;
       const hashMap = await buildApiKeyHashMap(configuredApiKeys);
@@ -418,6 +431,7 @@ export function useUsageDashboard() {
 
       setDataSource('memory');
       setData(normalized);
+      setMemoryDetailsSnapshot(memoryUsageDetailsRef.current);
       setLastRefreshTime(new Date().toLocaleTimeString());
       setLoading(false);
     } catch (err: unknown) {
@@ -438,9 +452,9 @@ export function useUsageDashboard() {
     if (!managementKey) return;
     try {
       const raw = await usageStatsApi.fetchMemoryStats();
-      const allBuckets = collectMemoryStatsBuckets(raw);
-      setHeatmapBuckets(buildHeatmapBuckets(allBuckets));
-      setMergedRecentBuckets(buildMergedBucketsFromRaw(raw));
+      const canonicalBuckets = collectMemoryStatsBuckets(raw);
+      setHeatmapBuckets(buildHeatmapBuckets(canonicalBuckets));
+      setMergedRecentBuckets(buildCanonicalBucketsFromRaw(raw));
     } catch {
       setHeatmapBuckets([]);
     }
@@ -480,12 +494,37 @@ export function useUsageDashboard() {
   const tpmValue = useMemo<string>(() => {
     if (!data) return '-';
     if (data.summary.totalTokens <= 0) return '-';
-    const covered = deriveCoveredMinutes(data);
-    if (covered !== null && covered > 0) {
-      return (data.summary.totalTokens / covered).toFixed(1);
+
+    if (data.source === 'postgres') {
+      const covered = deriveCoveredMinutes(data);
+      if (covered !== null && covered > 0) {
+        return (data.summary.totalTokens / covered).toFixed(1);
+      }
+      return '-';
     }
+
+    if (mergedRecentBuckets.length > 0) {
+      const bucketCovered = deriveCoveredMinutesFromBuckets(mergedRecentBuckets);
+      if (bucketCovered && bucketCovered > 0) {
+        const details = memoryDetailsSnapshot;
+        if (details.length > 0) {
+          const bucketTotalReqs = mergedRecentBuckets.reduce(
+            (t, b) => t + b.success + b.failed, 0
+          );
+          if (details.length <= bucketTotalReqs * 1.5 + 5) {
+            const recentTotalTokens = details.reduce(
+              (sum, d) => sum + tokenCountTotal(d.tokens), 0
+            );
+            if (recentTotalTokens > 0) {
+              return (recentTotalTokens / bucketCovered).toFixed(1);
+            }
+          }
+        }
+      }
+    }
+
     return '-';
-  }, [data]);
+  }, [data, mergedRecentBuckets, memoryDetailsSnapshot]);
 
   const displayRpm = rpmValue;
   const displayTpm = tpmValue;
@@ -496,17 +535,18 @@ export function useUsageDashboard() {
     return accountRows
       .filter((account) => account.key.startsWith('api-key/') && account.requests > 0)
       .map((account) => {
-        const childModels = data.byModel.filter(
-          (m) => m.provider && account.apiKeyHash,
-        );
+        const childModels = account.childModels ?? [];
         const hasModelAttribution = childModels.length > 0;
+        const parentTotalTokens = hasModelAttribution
+          ? childModels.reduce((sum, m) => sum + m.totalTokens, 0)
+          : account.totalTokens;
         return {
           key: account.key,
           label: account.label,
           requests: account.requests,
           successCount: account.successCount,
           failureCount: account.failureCount,
-          totalTokens: account.totalTokens,
+          totalTokens: parentTotalTokens,
           modelCount: hasModelAttribution ? new Set(childModels.map((m) => m.label)).size : -1,
           cost: null,
           hasModelAttribution,
@@ -578,6 +618,94 @@ export function useUsageDashboard() {
     return [...auths, ...provs].sort((a, b) => b.requests - a.requests);
   }, [authFileRows, providerRows]);
 
+  const metricTrends = useMemo<{
+    totalTokens?: TrendBucket[];
+    inputTokens?: TrendBucket[];
+    outputTokens?: TrendBucket[];
+    rpm?: TrendBucket[];
+    tpm?: TrendBucket[];
+  }>(() => {
+    if (!data) return {};
+
+    if (data.source === 'postgres' && data.summary) {
+      const s = data.summary;
+      return {
+        totalTokens: s.tokenTrend,
+        inputTokens: s.inputOutputTrend,
+        outputTokens: s.cacheTrend,
+        rpm: s.requestTrend,
+        tpm: s.tokenTrend,
+      };
+    }
+
+    const duration = RECENT_REQUEST_BLOCK_DURATION_MS;
+
+    if (mergedRecentBuckets.length >= 2) {
+      const rpmTrend: TrendBucket[] = mergedRecentBuckets.map((b, i) => {
+        const ts = b.time
+          ? new Date(b.time).getTime()
+          : i * duration;
+        return {
+          timestamp: ts,
+          value: (b.success + b.failed) / (duration / 60000),
+        };
+      });
+
+      const details = memoryDetailsSnapshot;
+      if (details.length >= 2) {
+        const bucketStartTimes = mergedRecentBuckets.map((b, i) =>
+          b.time
+            ? new Date(b.time).getTime()
+            : i * duration
+        );
+
+        const tokenBuckets = bucketStartTimes.map((start) => {
+          const end = start + duration;
+          const inBucket = details.filter((d) => {
+            if (!d.timestamp) return false;
+            const ts = new Date(d.timestamp).getTime();
+            return ts >= start && ts < end;
+          });
+          return {
+            timestamp: start,
+            inputTokens: inBucket.reduce((s, d) => s + d.tokens.inputTokens, 0),
+            outputTokens: inBucket.reduce((s, d) => s + d.tokens.outputTokens, 0),
+            totalTokens: inBucket.reduce((s, d) => s + tokenCountTotal(d.tokens), 0),
+          };
+        });
+
+        if (tokenBuckets.some((b) => b.totalTokens > 0)) {
+          const covered = deriveCoveredMinutesFromBuckets(mergedRecentBuckets);
+          return {
+            totalTokens: tokenBuckets.map((b) => ({ timestamp: b.timestamp, value: b.totalTokens })),
+            inputTokens: tokenBuckets.map((b) => ({ timestamp: b.timestamp, value: b.inputTokens })),
+            outputTokens: tokenBuckets.map((b) => ({ timestamp: b.timestamp, value: b.outputTokens })),
+            rpm: rpmTrend,
+            tpm: covered && covered > 0
+              ? tokenBuckets.map((b) => ({ timestamp: b.timestamp, value: b.totalTokens / covered }))
+              : undefined,
+          };
+        }
+      }
+
+      return { rpm: rpmTrend };
+    }
+
+    if (mergedRecentBuckets.length === 1) {
+      const b = mergedRecentBuckets[0];
+      const ts = b.time ? new Date(b.time).getTime() : 0;
+      const rpm = (b.success + b.failed) / (duration / 60000);
+      return {
+        rpm: [
+          { timestamp: ts, value: rpm },
+          { timestamp: ts + duration, value: rpm },
+        ],
+      };
+    }
+
+    return {};
+  }, [data, mergedRecentBuckets, memoryDetailsSnapshot]);
+
   return {
     loading,
     dataSource,
@@ -597,5 +725,6 @@ export function useUsageDashboard() {
     authFileRows,
     providerRows,
     sourceRows,
+    metricTrends,
   };
 }

@@ -11,6 +11,7 @@ import {
   normalizeRecentRequestBuckets,
   normalizeUsageTotal,
   sumRecentRequests,
+  mergeRecentRequestBucketGroups,
   RECENT_REQUEST_BUCKET_DURATION_MINUTES,
   type ApiKeyUsageResponse,
   type RecentRequestBucket,
@@ -868,7 +869,8 @@ function addModelRow(
   model: string,
   success: number,
   failure: number,
-  source?: unknown
+  source?: unknown,
+  apiKeyIdentity?: string,
 ) {
   const modelName = model.trim();
   if (!modelName || success + failure <= 0) {
@@ -884,6 +886,9 @@ function addModelRow(
       provider,
       model: modelName,
     });
+    if (apiKeyIdentity) {
+      row.apiKeyIdentity = apiKeyIdentity;
+    }
     target.set(rowKey, row);
   }
   addCounts(row, success, failure);
@@ -893,14 +898,15 @@ function addModelRow(
 function addModelRowsFromContainer(
   target: Map<string, UsageStatsGroupRow>,
   provider: string,
-  value: unknown
+  value: unknown,
+  apiKeyIdentity?: string,
 ) {
   if (Array.isArray(value)) {
     value.forEach((item) => {
       if (!isRecord(item)) return;
       const modelName = readStringField(item, MODEL_NAME_KEYS);
       const { success, failure } = readUsageCounts(item);
-      addModelRow(target, provider, modelName, success, failure, item);
+      addModelRow(target, provider, modelName, success, failure, item, apiKeyIdentity);
     });
     return;
   }
@@ -916,12 +922,12 @@ function addModelRowsFromContainer(
 
     if (isRecord(stats)) {
       const { success, failure } = readUsageCounts(stats);
-      addModelRow(target, provider, model, success, failure, stats);
+      addModelRow(target, provider, model, success, failure, stats, apiKeyIdentity);
       return;
     }
 
     const count = normalizeUsageTotal(stats);
-    addModelRow(target, provider, model, count, 0);
+    addModelRow(target, provider, model, count, 0, undefined, apiKeyIdentity);
   });
 }
 
@@ -939,7 +945,8 @@ function hasModelUsageContainer(record: Record<string, unknown>): boolean {
 function addModelRowsFromRecord(
   target: Map<string, UsageStatsGroupRow>,
   provider: string,
-  record: Record<string, unknown>
+  record: Record<string, unknown>,
+  apiKeyIdentity?: string,
 ) {
   const successes = new Map<string, number>();
   const failures = new Map<string, number>();
@@ -948,15 +955,15 @@ function addModelRowsFromRecord(
 
   const models = new Set([...successes.keys(), ...failures.keys()]);
   models.forEach((model) => {
-    addModelRow(target, provider, model, successes.get(model) ?? 0, failures.get(model) ?? 0);
+    addModelRow(target, provider, model, successes.get(model) ?? 0, failures.get(model) ?? 0, undefined, apiKeyIdentity);
   });
 
-  MODEL_USAGE_KEYS.forEach((key) => addModelRowsFromContainer(target, provider, record[key]));
+  MODEL_USAGE_KEYS.forEach((key) => addModelRowsFromContainer(target, provider, record[key], apiKeyIdentity));
 
   const modelName = readModelName(record);
   if (modelName && models.size === 0 && !hasModelUsageContainer(record)) {
     const { success, failure } = readUsageCounts(record);
-    addModelRow(target, provider, modelName, success, failure, record);
+    addModelRow(target, provider, modelName, success, failure, record, apiKeyIdentity);
   }
 }
 
@@ -1003,6 +1010,18 @@ function resolveApiKeyIdentity(
   entry: Record<string, unknown>,
   configuredKeyHashes: Map<string, string>
 ): { identity: string; label: string } {
+  const trimmedMapKey = mapKey.trim();
+  const extractedKey = extractApiKeyDisplayKey(trimmedMapKey);
+
+  if (trimmedMapKey.includes('|') && extractedKey) {
+    return {
+      identity: trimmedMapKey,
+      label: looksLikeSha256(extractedKey)
+        ? shortHashLabel(extractedKey)
+        : maskApiKeyForDisplay(extractedKey),
+    };
+  }
+
   for (const hashKey of API_KEY_HASH_KEYS) {
     const trustedHash = readKnownField(entry, [hashKey]);
     if (typeof trustedHash === 'string' && trustedHash.trim()) {
@@ -1015,32 +1034,31 @@ function resolveApiKeyIdentity(
     }
   }
 
-  if (looksLikeSha256(mapKey)) {
-    const masked = configuredKeyHashes.get(mapKey);
+  if (looksLikeSha256(trimmedMapKey)) {
+    const masked = configuredKeyHashes.get(trimmedMapKey);
     return {
-      identity: mapKey,
-      label: masked ?? shortHashLabel(mapKey),
+      identity: trimmedMapKey,
+      label: masked ?? shortHashLabel(trimmedMapKey),
     };
   }
 
-  const trimmedKey = mapKey.trim();
-  if (configuredKeyHashes.has(trimmedKey)) {
+  if (configuredKeyHashes.has(trimmedMapKey)) {
     return {
-      identity: trimmedKey,
-      label: configuredKeyHashes.get(trimmedKey)!,
+      identity: trimmedMapKey,
+      label: configuredKeyHashes.get(trimmedMapKey)!,
     };
   }
 
   for (const [hash, masked] of configuredKeyHashes) {
-    if (hash === trimmedKey) {
+    if (hash === trimmedMapKey) {
       return { identity: hash, label: masked };
     }
   }
 
-  if (trimmedKey) {
+  if (trimmedMapKey) {
     return {
-      identity: trimmedKey,
-      label: trimmedKey,
+      identity: trimmedMapKey,
+      label: maskApiKeyForDisplay(extractedKey || trimmedMapKey),
     };
   }
 
@@ -1054,21 +1072,36 @@ export function collectMemoryStatsBuckets(
   raw: MemoryStatsPayload | ApiKeyUsageResponse
 ): RecentRequestBucket[] {
   const payload = unwrapMemoryStatsPayload(raw);
-  const buckets: RecentRequestBucket[] = [];
 
+  const apiKeyBuckets: RecentRequestBucket[][] = [];
   Object.values(payload.apiKeyUsage || {}).forEach((providerEntries) => {
     if (!isRecord(providerEntries)) return;
     Object.values(providerEntries).forEach((entry) => {
       if (!isRecord(entry)) return;
-      buckets.push(...readRecentRequestBuckets(entry));
+      const buckets = readRecentRequestBuckets(entry as Record<string, unknown>);
+      if (buckets.length > 0) {
+        apiKeyBuckets.push(buckets);
+      }
     });
   });
 
+  if (apiKeyBuckets.length > 0) {
+    return mergeRecentRequestBucketGroups(apiKeyBuckets);
+  }
+
+  const authFileBuckets: RecentRequestBucket[][] = [];
   selectAuthFilesWithStats(payload.authFiles || []).forEach((file) => {
-    buckets.push(...readRecentRequestBuckets(file as Record<string, unknown>));
+    const buckets = readRecentRequestBuckets(file as Record<string, unknown>);
+    if (buckets.length > 0) {
+      authFileBuckets.push(buckets);
+    }
   });
 
-  return buckets;
+  if (authFileBuckets.length > 0) {
+    return mergeRecentRequestBucketGroups(authFileBuckets);
+  }
+
+  return [];
 }
 
 export interface PrecomputedApiKeyHashMap {
@@ -1171,6 +1204,22 @@ export function normalizeMemoryStats(
 
       addProviderUsage(providerKey, success, failure, rec);
       addModelRowsFromRecord(byModelMap, providerKey, rec);
+
+      const attributedMap = new Map<string, UsageStatsGroupRow>();
+      addModelRowsFromRecord(attributedMap, providerKey, rec, resolved.identity);
+      for (const modelRow of attributedMap.values()) {
+        apiKeyRow.childModels.push(modelRow);
+      }
+    }
+  }
+
+  for (const apiKeyRow of apiKeyRowMap.values()) {
+    if (apiKeyRow.childModels.length > 0) {
+      apiKeyRow.totalTokens = apiKeyRow.childModels.reduce((sum, m) => sum + m.totalTokens, 0);
+      apiKeyRow.inputTokens = apiKeyRow.childModels.reduce((sum, m) => sum + m.inputTokens, 0);
+      apiKeyRow.outputTokens = apiKeyRow.childModels.reduce((sum, m) => sum + m.outputTokens, 0);
+      apiKeyRow.reasoningTokens = apiKeyRow.childModels.reduce((sum, m) => sum + m.reasoningTokens, 0);
+      apiKeyRow.cachedTokens = apiKeyRow.childModels.reduce((sum, m) => sum + m.cachedTokens, 0);
     }
   }
 
@@ -1259,6 +1308,7 @@ export function normalizeMemoryStats(
       cacheTokens: row.cachedTokens,
       totalTokens: row.totalTokens,
       apiKeyHash: row.identity,
+      childModels: row.childModels.length > 0 ? row.childModels : undefined,
     })),
     ...authFileRows.map((row) => ({
       key: `auth-file/${row.key}`,
@@ -1362,10 +1412,26 @@ function extractTrendTimestamps(trend: { timestamp: number }[] | undefined): { s
   return { start: first, end: last };
 }
 
-export function maskApiKey(key: string): string {
+export function extractApiKeyDisplayKey(identity: string): string {
+  const trimmed = identity.trim();
+  if (trimmed.includes('|')) {
+    const segment = trimmed.slice(trimmed.lastIndexOf('|') + 1).trim();
+    return segment || trimmed;
+  }
+  return trimmed;
+}
+
+export function maskApiKeyForDisplay(key: string): string {
   const trimmed = key.trim();
-  if (trimmed.length <= 8) return trimmed;
-  return `${trimmed.slice(0, 5)}***${trimmed.slice(-4)}`;
+  if (trimmed.length <= 4) return trimmed;
+  if (trimmed.length <= 8) {
+    return `${trimmed.slice(0, 2)}${'*'.repeat(trimmed.length - 4)}${trimmed.slice(-2)}`;
+  }
+  return `${trimmed.slice(0, 4)}${'*'.repeat(trimmed.length - 8)}${trimmed.slice(-4)}`;
+}
+
+export function maskApiKey(key: string): string {
+  return maskApiKeyForDisplay(key);
 }
 
 export async function computeApiKeyHash(apiKey: string): Promise<string> {
@@ -1426,6 +1492,8 @@ export function isTrustedApiKeyHashField(fieldName: string): boolean {
 }
 
 export { API_KEY_HASH_KEYS, PERIOD_START_KEYS, PERIOD_END_KEYS, COVERED_MINUTES_KEYS };
+
+export { tokenCountTotal };
 
 export function augmentMemoryStatsWithRequestLogs(
   data: UsageStatsResponse,
