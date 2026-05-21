@@ -347,33 +347,32 @@ export function useUsageDashboard() {
     setLoading(true);
     setError(null);
 
-    if (postgresAvailableRef.current !== false) {
-      try {
-        const persistentData = await usageStatsApi.fetchPersistentStats(
-          serviceUrl,
-          managementKey,
-          range,
-        );
-        if (ac.signal.aborted) return;
-        if (
-          persistentData?.summary &&
-          persistentData.summary.totalRequests > 0
-        ) {
-          postgresAvailableRef.current = true;
-          setDataSource('postgres');
-          setData({ ...persistentData, source: 'postgres' });
-          setDataCoverage(null);
-          setLastRefreshTime(new Date().toLocaleTimeString());
-          setLoading(false);
-          return;
-        }
-      } catch {
-        if (ac.signal.aborted) return;
-        postgresAvailableRef.current = false;
-      }
-    }
-
     try {
+      if (postgresAvailableRef.current !== false) {
+        try {
+          const persistentData = await usageStatsApi.fetchPersistentStats(
+            serviceUrl,
+            managementKey,
+            range,
+          );
+          if (ac.signal.aborted) return;
+          if (
+            persistentData?.summary &&
+            persistentData.summary.totalRequests > 0
+          ) {
+            postgresAvailableRef.current = true;
+            setDataSource('postgres');
+            setData({ ...persistentData, source: 'postgres' });
+            setDataCoverage(null);
+            setLastRefreshTime(new Date().toLocaleTimeString());
+            return;
+          }
+        } catch {
+          if (ac.signal.aborted) return;
+          postgresAvailableRef.current = false;
+        }
+      }
+
       const rawMemory = await usageStatsApi.fetchMemoryStats();
       if (ac.signal.aborted) return;
 
@@ -449,7 +448,6 @@ export function useUsageDashboard() {
         setDataSource('unavailable');
         setData(null);
         setError(t('usage_stats.empty_memory_disabled'));
-        setLoading(false);
         return;
       }
 
@@ -457,7 +455,6 @@ export function useUsageDashboard() {
       setData(normalized);
       setMemoryDetailsSnapshot(memoryUsageDetailsRef.current);
       setLastRefreshTime(new Date().toLocaleTimeString());
-      setLoading(false);
     } catch (err: unknown) {
       if (ac.signal.aborted) return;
       const message = err instanceof Error ? err.message : t('usage_stats.error_generic');
@@ -468,9 +465,10 @@ export function useUsageDashboard() {
       setDataSource('error');
       setData(null);
       setError(finalMessage);
+    } finally {
       setLoading(false);
     }
-  }, [serviceUrl, range, managementKey, usageStatisticsEnabled, t]);
+    }, [serviceUrl, range, managementKey, usageStatisticsEnabled, t]);
 
   const fetchHeatmap = useCallback(async () => {
     if (!managementKey) return;

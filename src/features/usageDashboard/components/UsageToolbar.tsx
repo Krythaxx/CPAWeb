@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { IconRefreshCw, IconDollarSign } from '@/components/ui/icons';
@@ -14,6 +15,21 @@ const RANGES: { key: DashboardTimeRange; label: string }[] = [
 ];
 
 const REFRESH_OPTIONS = [0, 3, 5, 10, 30];
+
+const COVERAGE_BANNER_TIMEOUT_MS = 10_000;
+
+function CoverageBanner({ message }: { message: string }) {
+  const [visible, setVisible] = useState(true);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setVisible(false), COVERAGE_BANNER_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, []);
+
+  if (!visible) return null;
+
+  return <div className={styles.coverageBanner}>{message}</div>;
+}
 
 interface UsageToolbarProps {
   range: DashboardTimeRange;
@@ -93,9 +109,7 @@ export function UsageToolbar({
         </div>
       </div>
       {dataCoverage?.partial && (
-        <div className={styles.coverageBanner}>
-          {t('usage_dashboard.coverage_warning')}
-        </div>
+        <CoverageBanner message={t('usage_dashboard.coverage_warning')} />
       )}
     </>
   );
