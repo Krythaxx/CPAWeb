@@ -64,6 +64,26 @@ export function UsageStatsPage() {
     ? s.cachedTokens / (s.inputTokens + s.outputTokens)
     : 0;
 
+  const totalCostBadge = (() => {
+    if (!s || !showTokenColumns || s.totalTokens <= 0) return undefined;
+    const byModel = dashboard.data?.byModel ?? [];
+    let total = 0;
+    let hasPrice = false;
+    for (const row of byModel) {
+      if (row.requests <= 0) continue;
+      const model = row.model ?? row.key;
+      const priceEntry = priceTable.find((e) => e.model === model);
+      if (!priceEntry) continue;
+      hasPrice = true;
+      total += calculateCost(row.inputTokens, row.outputTokens, priceEntry, row.cachedTokens) ?? 0;
+    }
+    return hasPrice ? formatCost(total) : undefined;
+  })();
+
+  const cacheBadge = s && showTokenColumns
+    ? `${t('usage_dashboard.cached')}: ${formatNumber(s.cachedTokens)} · ${t('usage_dashboard.cache_hit')}: ${(cacheRate * 100).toFixed(1)}%`
+    : undefined;
+
   return (
     <div className={styles.container}>
       <UsageToolbar
@@ -100,20 +120,14 @@ export function UsageStatsPage() {
             <MetricCard
               title={t('usage_dashboard.total_token')}
               value={s && s.totalTokens > 0 ? formatNumber(s.totalTokens) : '-'}
-              subtitle={showTokenColumns && s && s.totalTokens > 0 ? formatCost(calculateCost(s.inputTokens, s.outputTokens, undefined)) : undefined}
+              badge={totalCostBadge}
               trend={dashboard.metricTrends.totalTokens}
               trendColor="#3b82f6"
             />
             <MetricCard
               title={t('usage_dashboard.input_output')}
               value={s && (s.inputTokens > 0 || s.outputTokens > 0) ? `${formatNumber(s.inputTokens)} / ${formatNumber(s.outputTokens)}` : '-'}
-              subtitle={
-                s && showTokenColumns
-                  ? `${t('usage_dashboard.cached')}: ${formatNumber(s.cachedTokens)} · ${t('usage_dashboard.cache_hit')}: ${(cacheRate * 100).toFixed(1)}%`
-                  : isMemory && s
-                    ? t('usage_stats.token_unavailable')
-                    : undefined
-              }
+              badge={cacheBadge}
               trend={dashboard.metricTrends.inputTokens}
               trendColor="#3b82f6"
               secondaryTrend={dashboard.metricTrends.outputTokens}
@@ -122,14 +136,12 @@ export function UsageStatsPage() {
             <MetricCard
               title={t('usage_dashboard.rpm')}
               value={dashboard.rpmValue}
-              subtitle={t('usage_dashboard.requests_per_minute')}
               trend={dashboard.metricTrends.rpm}
               trendColor="#f97316"
             />
             <MetricCard
               title={t('usage_dashboard.tpm')}
               value={dashboard.tpmValue}
-              subtitle={t('usage_dashboard.tokens_per_minute')}
               trend={dashboard.metricTrends.tpm}
               trendColor="#8b5cf6"
             />

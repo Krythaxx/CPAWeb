@@ -41,11 +41,11 @@ const STORAGE_KEY_MEMORY_USAGE_DETAILS = 'cli-proxy-memory-usage-details';
 const MAX_MEMORY_USAGE_DETAILS = 500;
 const MEMORY_USAGE_DETAILS_TTL_MS = 60 * 60 * 1000;
 
-function formatMetricValue(value: number): string {
-  return value.toLocaleString('en-US', {
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 1,
-  });
+function formatCompactValue(n: number): string {
+  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return n.toLocaleString('en-US', { maximumFractionDigits: 1 });
 }
 
 function normalizeBoolean(value: unknown): boolean | undefined {
@@ -571,7 +571,7 @@ export function useUsageDashboard() {
     if (data.source === 'postgres') {
       const covered = deriveCoveredMinutes(data);
       if (covered !== null && covered > 0) {
-        return formatMetricValue(data.summary.totalTokens / covered);
+        return formatCompactValue(data.summary.totalTokens / covered);
       }
       return '-';
     }
@@ -589,12 +589,12 @@ export function useUsageDashboard() {
               (sum, d) => sum + tokenCountTotal(d.tokens), 0
             );
             if (recentTotalTokens > 0) {
-              return formatMetricValue(recentTotalTokens / bucketCovered);
+              return formatCompactValue(recentTotalTokens / bucketCovered);
             }
           }
         }
 
-        return formatMetricValue(data.summary.totalTokens / bucketCovered);
+        return formatCompactValue(data.summary.totalTokens / bucketCovered);
       }
     }
 

@@ -7,6 +7,7 @@ interface MetricCardProps {
   title: string;
   value: string;
   subtitle?: string;
+  badge?: string;
   trend?: TrendBucket[];
   trendColor?: string;
   secondaryTrend?: TrendBucket[];
@@ -17,6 +18,7 @@ export function MetricCard({
   title,
   value,
   subtitle,
+  badge,
   trend,
   trendColor = '#3b82f6',
   secondaryTrend,
@@ -36,6 +38,7 @@ export function MetricCard({
     <div className={styles.card}>
       <div className={styles.header}>
         <span className={styles.title}>{title}</span>
+        {badge && <span className={styles.badge}>{badge}</span>}
       </div>
       <div className={styles.value}>{value}</div>
       {subtitle && <div className={styles.subtitle}>{subtitle}</div>}
