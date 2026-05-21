@@ -27,6 +27,7 @@ import type {
   SourceDisplayRow,
   TrendBucket,
   DataCoverageInfo,
+  UsageStatsSummary,
 } from '@/types/usageStats';
 import {
   normalizeRecentRequestBuckets,
@@ -184,6 +185,52 @@ function mergeMemoryUsageDetails(
       merged.set(getMemoryUsageDetailKey(detail), detail);
     });
   return Array.from(merged.values()).slice(-MAX_MEMORY_USAGE_DETAILS);
+}
+
+function buildTwoPointTrend(start: number, end: number, value: number): TrendBucket[] | undefined {
+  if (value <= 0) {
+    return undefined;
+  }
+
+  return [
+    { timestamp: start, value: 0 },
+    { timestamp: end, value },
+  ];
+}
+
+function buildFlatTwoPointTrend(start: number, end: number, value: number): TrendBucket[] | undefined {
+  if (value <= 0) {
+    return undefined;
+  }
+
+  return [
+    { timestamp: start, value },
+    { timestamp: end, value },
+  ];
+}
+
+function buildFallbackTokenTrends(
+  summary: UsageStatsSummary,
+  start: number,
+  end: number,
+  coveredMinutes: number | null,
+): {
+  totalTokens?: TrendBucket[];
+  inputTokens?: TrendBucket[];
+  outputTokens?: TrendBucket[];
+  tpm?: TrendBucket[];
+} {
+  const tpm =
+    coveredMinutes && coveredMinutes > 0
+      ? summary.totalTokens / coveredMinutes
+      : 0;
+
+  return {
+    totalTokens: buildTwoPointTrend(start, end, summary.totalTokens),
+    inputTokens: buildTwoPointTrend(start, end, summary.inputTokens),
+    outputTokens: buildTwoPointTrend(start, end, summary.outputTokens),
+    tpm: buildFlatTwoPointTrend(start, end, tpm),
+  };
 }
 
 function selectMemoryUsageDetailsForStats(
@@ -544,6 +591,8 @@ export function useUsageDashboard() {
             }
           }
         }
+
+        return formatMetricValue(data.summary.totalTokens / bucketCovered);
       }
     }
 
@@ -589,6 +638,7 @@ export function useUsageDashboard() {
         const childModels = account.childModels ?? data.byModel.filter(
           (m) => m.provider === account.provider,
         );
+        const childTotalTokens = childModels.reduce((sum, m) => sum + m.totalTokens, 0);
         return {
           key: account.key,
           label: account.label,
@@ -596,7 +646,7 @@ export function useUsageDashboard() {
           requests: account.requests,
           successCount: account.successCount,
           failureCount: account.failureCount,
-          totalTokens: account.totalTokens,
+          totalTokens: childTotalTokens > 0 ? childTotalTokens : account.totalTokens,
           modelCount: new Set(childModels.map((m) => m.label)).size,
           cost: null,
           childModels,
@@ -620,13 +670,14 @@ export function useUsageDashboard() {
             (m.provider === row.label || m.key.startsWith(row.key)) &&
             !authFileOwnedModelKeys.has(m.key),
         );
+        const childTotalTokens = childModels.reduce((sum, m) => sum + m.totalTokens, 0);
         return {
           key: row.key,
           label: row.label,
           requests: row.requests,
           successCount: row.successCount,
           failureCount: row.failureCount,
-          totalTokens: row.totalTokens,
+          totalTokens: childTotalTokens > 0 ? childTotalTokens : row.totalTokens,
           modelCount: new Set(childModels.map((m) => m.label)).size,
           cost: null,
           childModels,
@@ -670,6 +721,7 @@ export function useUsageDashboard() {
     }
 
     const duration = RECENT_REQUEST_BLOCK_DURATION_MS;
+    const bucketMinutes = duration / 60000;
 
     if (mergedRecentBuckets.length >= 2) {
       const rpmTrend: TrendBucket[] = mergedRecentBuckets.map((b, i) => {
@@ -706,20 +758,34 @@ export function useUsageDashboard() {
         });
 
         if (tokenBuckets.some((b) => b.totalTokens > 0)) {
-          const covered = deriveCoveredMinutesFromBuckets(mergedRecentBuckets);
           return {
             totalTokens: tokenBuckets.map((b) => ({ timestamp: b.timestamp, value: b.totalTokens })),
             inputTokens: tokenBuckets.map((b) => ({ timestamp: b.timestamp, value: b.inputTokens })),
             outputTokens: tokenBuckets.map((b) => ({ timestamp: b.timestamp, value: b.outputTokens })),
             rpm: rpmTrend,
-            tpm: covered && covered > 0
-              ? tokenBuckets.map((b) => ({ timestamp: b.timestamp, value: b.totalTokens / covered }))
-              : undefined,
+            tpm: tokenBuckets.map((b) => ({ timestamp: b.timestamp, value: b.totalTokens / bucketMinutes })),
           };
         }
       }
 
-      return { rpm: rpmTrend };
+      const firstTs = mergedRecentBuckets[0].time
+        ? new Date(mergedRecentBuckets[0].time).getTime()
+        : 0;
+      const lastBucket = mergedRecentBuckets[mergedRecentBuckets.length - 1];
+      const lastTs = (
+        lastBucket.time
+          ? new Date(lastBucket.time).getTime()
+          : (mergedRecentBuckets.length - 1) * duration
+      ) + duration;
+      return {
+        rpm: rpmTrend,
+        ...buildFallbackTokenTrends(
+          data.summary,
+          firstTs,
+          lastTs,
+          deriveCoveredMinutesFromBuckets(mergedRecentBuckets),
+        ),
+      };
     }
 
     if (mergedRecentBuckets.length === 1) {
@@ -731,10 +797,17 @@ export function useUsageDashboard() {
           { timestamp: ts, value: rpm },
           { timestamp: ts + duration, value: rpm },
         ],
+        ...buildFallbackTokenTrends(
+          data.summary,
+          ts,
+          ts + duration,
+          deriveCoveredMinutesFromBuckets(mergedRecentBuckets),
+        ),
       };
     }
 
-    return {};
+    const now = Date.now();
+    return buildFallbackTokenTrends(data.summary, now - duration, now, deriveCoveredMinutes(data));
   }, [data, mergedRecentBuckets, memoryDetailsSnapshot]);
 
   return {

@@ -1693,15 +1693,15 @@ export function augmentMemoryStatsWithRequestLogs(
       : providerFallback || rawProviderKey;
 
     if (shouldFillTokens) {
+      const providerRow = providerMap.get(providerKey);
+      if (providerRow) {
+        applyTokenCounts(providerRow, detail.tokens);
+      }
+
       if (singleAuthFile) {
         applyTokenCounts(singleAuthFile, detail.tokens);
       } else if (singleApiKey) {
         applyTokenCounts(singleApiKey, detail.tokens);
-      } else {
-        const providerRow = providerMap.get(providerKey);
-        if (providerRow) {
-          applyTokenCounts(providerRow, detail.tokens);
-        }
       }
     }
 
