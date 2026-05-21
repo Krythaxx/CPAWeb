@@ -98,6 +98,7 @@ export interface HeatmapBucket {
 export interface PriceEntry {
   model: string;
   inputPricePerM: number;
+  cacheHitPricePerM: number;
   outputPricePerM: number;
 }
 

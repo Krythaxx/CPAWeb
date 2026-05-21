@@ -20,11 +20,11 @@ function saveTable(table: PriceEntry[]) {
 export function usePriceTable() {
   const [table, setTable] = useState<PriceEntry[]>(loadTable);
 
-  const updateEntry = useCallback((model: string, input: number, output: number) => {
+  const updateEntry = useCallback((model: string, input: number, cacheHit: number, output: number) => {
     setTable((prev) => {
       const idx = prev.findIndex((e) => e.model === model);
       const next = [...prev];
-      const entry: PriceEntry = { model, inputPricePerM: input, outputPricePerM: output };
+      const entry: PriceEntry = { model, inputPricePerM: input, cacheHitPricePerM: cacheHit, outputPricePerM: output };
       if (idx >= 0) {
         next[idx] = entry;
       } else {

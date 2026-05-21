@@ -68,8 +68,8 @@ export function ModelTable({ rows, priceTable }: ModelTableProps) {
         case 'cacheRate':
           return dir * (getCacheRate(a) - getCacheRate(b));
         case 'cost': {
-          const ca = calculateCost(a.inputTokens, a.outputTokens, findPriceEntry(priceTable, a.label)) ?? -1;
-          const cb = calculateCost(b.inputTokens, b.outputTokens, findPriceEntry(priceTable, b.label)) ?? -1;
+          const ca = calculateCost(a.inputTokens, a.outputTokens, findPriceEntry(priceTable, a.label), a.cachedTokens) ?? -1;
+          const cb = calculateCost(b.inputTokens, b.outputTokens, findPriceEntry(priceTable, b.label), b.cachedTokens) ?? -1;
           return dir * (ca - cb);
         }
         default:
@@ -158,6 +158,7 @@ export function ModelTable({ rows, priceTable }: ModelTableProps) {
                   row.inputTokens,
                   row.outputTokens,
                   findPriceEntry(priceTable, row.label),
+                  row.cachedTokens,
                 );
                 const cacheRate = getCacheRate(row);
                 return (

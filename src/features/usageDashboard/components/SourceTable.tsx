@@ -38,7 +38,7 @@ export function SourceTable({ rows, priceTable }: SourceTableProps) {
     let total = 0;
     let hasPrice = false;
     for (const m of row.childModels) {
-      const cost = calculateCost(m.inputTokens, m.outputTokens, findPriceEntry(priceTable, m.label));
+      const cost = calculateCost(m.inputTokens, m.outputTokens, findPriceEntry(priceTable, m.label), m.cachedTokens);
       if (cost !== null) {
         total += cost;
         hasPrice = true;

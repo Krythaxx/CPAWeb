@@ -4,10 +4,13 @@ export function calculateCost(
   inputTokens: number,
   outputTokens: number,
   priceEntry: PriceEntry | undefined,
+  cachedTokens?: number,
 ): number | null {
   if (!priceEntry) return null;
-  if (priceEntry.inputPricePerM === 0 && priceEntry.outputPricePerM === 0) return null;
-  return (inputTokens * priceEntry.inputPricePerM + outputTokens * priceEntry.outputPricePerM) / 1_000_000;
+  if (priceEntry.inputPricePerM === 0 && priceEntry.outputPricePerM === 0 && (priceEntry.cacheHitPricePerM ?? 0) === 0) return null;
+  const cacheHit = priceEntry.cacheHitPricePerM ?? 0;
+  const cacheTokens = cachedTokens ?? 0;
+  return (inputTokens * priceEntry.inputPricePerM + cacheTokens * cacheHit + outputTokens * priceEntry.outputPricePerM) / 1_000_000;
 }
 
 export function findPriceEntry(

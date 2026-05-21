@@ -10,7 +10,7 @@ interface PriceManagerModalProps {
   onClose: () => void;
   modelRows: UsageStatsGroupRow[];
   priceTable: PriceEntry[];
-  onUpdateEntry: (model: string, input: number, output: number) => void;
+  onUpdateEntry: (model: string, input: number, cacheHit: number, output: number) => void;
   onRemoveEntry: (model: string) => void;
   onClearAll: () => void;
 }
@@ -33,18 +33,19 @@ export function PriceManagerModal({
     return Array.from(set).sort();
   }, [modelRows, priceTable]);
 
-  const [editValues, setEditValues] = useState<Record<string, { input: string; output: string }>>({});
+  const [editValues, setEditValues] = useState<Record<string, { input: string; cacheHit: string; output: string }>>({});
 
   const getPrice = (model: string) => {
     const entry = priceTable.find((p) => p.model === model);
     const edit = editValues[model];
     return {
       input: edit?.input ?? (entry?.inputPricePerM?.toString() ?? ''),
+      cacheHit: edit?.cacheHit ?? (entry?.cacheHitPricePerM?.toString() ?? ''),
       output: edit?.output ?? (entry?.outputPricePerM?.toString() ?? ''),
     };
   };
 
-  const handleChange = (model: string, field: 'input' | 'output', value: string) => {
+  const handleChange = (model: string, field: 'input' | 'cacheHit' | 'output', value: string) => {
     setEditValues((prev) => ({
       ...prev,
       [model]: { ...getPrice(model), [field]: value },
@@ -53,7 +54,7 @@ export function PriceManagerModal({
 
   const handleSave = (model: string) => {
     const vals = getPrice(model);
-    onUpdateEntry(model, parseFloat(vals.input) || 0, parseFloat(vals.output) || 0);
+    onUpdateEntry(model, parseFloat(vals.input) || 0, parseFloat(vals.cacheHit) || 0, parseFloat(vals.output) || 0);
     setEditValues((prev) => {
       const next = { ...prev };
       delete next[model];
@@ -66,7 +67,7 @@ export function PriceManagerModal({
       open={open}
       onClose={onClose}
       title={t('usage_dashboard.manage_prices')}
-      width={600}
+      width={720}
       footer={
         <div className={styles.footer}>
           <Button size="sm" onClick={onClearAll}>
@@ -84,6 +85,7 @@ export function PriceManagerModal({
           <tr>
             <th>{t('usage_stats.col_model')}</th>
             <th>{t('usage_dashboard.input_price')}</th>
+            <th>{t('usage_dashboard.cache_hit_price')}</th>
             <th>{t('usage_dashboard.output_price')}</th>
             <th />
           </tr>
@@ -100,6 +102,17 @@ export function PriceManagerModal({
                     className={styles.input}
                     value={vals.input}
                     onChange={(e) => handleChange(model, 'input', e.target.value)}
+                    placeholder="0"
+                    step="0.01"
+                    min="0"
+                  />
+                </td>
+                <td>
+                  <input
+                    type="number"
+                    className={styles.input}
+                    value={vals.cacheHit}
+                    onChange={(e) => handleChange(model, 'cacheHit', e.target.value)}
                     placeholder="0"
                     step="0.01"
                     min="0"
@@ -131,7 +144,7 @@ export function PriceManagerModal({
           })}
           {allModels.length === 0 && (
             <tr>
-              <td colSpan={4} className={styles.empty}>
+              <td colSpan={5} className={styles.empty}>
                 {t('usage_dashboard.no_models_for_pricing')}
               </td>
             </tr>
