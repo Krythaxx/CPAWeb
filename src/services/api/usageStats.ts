@@ -1714,8 +1714,26 @@ export function augmentMemoryStatsWithRequestLogs(
       ? data.byProvider.find((row) => row.requests > 0)?.key
       : undefined;
 
+  const apiKeyToProvider = new Map<string, string>();
+  for (const acct of data.byAccount) {
+    if (acct.apiKeyIdentity && acct.key.startsWith('api-key/')) {
+      const provider = data.byProvider.find(
+        (p) => p.requests > 0 && acct.key.startsWith('api-key/')
+      );
+      if (provider) {
+        apiKeyToProvider.set(acct.apiKeyIdentity, provider.key);
+      }
+    }
+  }
+
   details.forEach((detail) => {
-    const rawProviderKey = normalizeProviderKey(detail.provider, providerFallback || 'unknown');
+    let rawProviderKey = normalizeProviderKey(detail.provider, providerFallback || 'unknown');
+    if (rawProviderKey === 'unknown' && detail.apiKey) {
+      const apiKeyProvider = apiKeyToProvider.get(detail.apiKey);
+      if (apiKeyProvider) {
+        rawProviderKey = apiKeyProvider;
+      }
+    }
     const providerKey = providerMap.has(rawProviderKey)
       ? rawProviderKey
       : providerFallback || rawProviderKey;

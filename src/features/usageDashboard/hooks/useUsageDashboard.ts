@@ -438,13 +438,10 @@ export function useUsageDashboard() {
             Math.max(1, Math.min(normalized.summary.totalRequests, MAX_MEMORY_USAGE_DETAILS))
           );
           if (ac.signal.aborted) return;
-          console.log('[DEBUG] queueDetails raw:', JSON.stringify(queueDetails.slice(0, 3), null, 2));
-          console.log('[DEBUG] byProvider:', JSON.stringify(normalized.byProvider.map(p => ({ key: p.key, label: p.label, requests: p.requests, totalTokens: p.totalTokens })), null, 2));
           memoryUsageDetailsRef.current = mergeMemoryUsageDetails(
             memoryUsageDetailsRef.current,
             queueDetails
           );
-          console.log('[DEBUG] merged details sample:', memoryUsageDetailsRef.current.slice(0, 3).map(d => ({ provider: d.provider, model: d.model, apiKey: d.apiKey, tokens: d.tokens })));
           saveCachedMemoryUsageDetails(memoryUsageDetailsRef.current);
         } catch {
           if (ac.signal.aborted) return;
@@ -730,10 +727,20 @@ export function useUsageDashboard() {
     const baseProviders = data.byProvider.filter((r) => r.requests > 0);
 
     if (memoryDetailsSnapshot.length > 0) {
+      const providerFallback =
+        baseProviders.length === 1
+          ? baseProviders[0].label.toLowerCase()
+          : undefined;
+
       const providerTokenMap = new Map<string, {
         requests: number;
         successCount: number;
         failureCount: number;
+        inputTokens: number;
+        outputTokens: number;
+        reasoningTokens: number;
+        cachedTokens: number;
+        totalTokens: number;
         models: Map<string, {
           requests: number;
           successCount: number;
@@ -746,15 +753,23 @@ export function useUsageDashboard() {
         }>;
       }>();
       for (const detail of memoryDetailsSnapshot) {
-        const prov = detail.provider;
+        let prov = (detail.provider ?? '').trim().toLowerCase();
+        if (!prov || prov === 'unknown') {
+          prov = providerFallback ?? prov;
+        }
         if (!prov) continue;
         let entry = providerTokenMap.get(prov);
         if (!entry) {
-          entry = { requests: 0, successCount: 0, failureCount: 0, models: new Map() };
+          entry = { requests: 0, successCount: 0, failureCount: 0, inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cachedTokens: 0, totalTokens: 0, models: new Map() };
           providerTokenMap.set(prov, entry);
         }
         entry.requests++;
         if (detail.success) { entry.successCount++; } else { entry.failureCount++; }
+        entry.inputTokens += detail.tokens.inputTokens;
+        entry.outputTokens += detail.tokens.outputTokens;
+        entry.reasoningTokens += detail.tokens.reasoningTokens;
+        entry.cachedTokens += detail.tokens.cachedTokens;
+        entry.totalTokens += tokenCountTotal(detail.tokens);
 
         const modelName = detail.model || 'unknown';
         let m = entry.models.get(modelName);
@@ -787,12 +802,14 @@ export function useUsageDashboard() {
           let requests = baseRow?.requests ?? 0;
           let successCount = baseRow?.successCount ?? 0;
           let failureCount = baseRow?.failureCount ?? 0;
+          let providerTotalTokens = 0;
           let childModels: UsageStatsGroupRow[] = [];
 
           if (tokenAgg) {
             requests = requests || tokenAgg.requests;
             successCount = successCount || tokenAgg.successCount;
             failureCount = failureCount || tokenAgg.failureCount;
+            providerTotalTokens = tokenAgg.totalTokens;
             childModels = Array.from(tokenAgg.models.entries())
               .map(([modelName, ms]) => ({
                 key: `${provKey}/${modelName}`,
@@ -821,14 +838,14 @@ export function useUsageDashboard() {
             childModels = bModels;
           }
 
-          const totalTokens = childModels.reduce((s, m) => s + m.totalTokens, 0);
+          const childTotalTokens = childModels.reduce((s, m) => s + m.totalTokens, 0);
           results.push({
             key: baseRow?.key ?? provKey,
             label: baseRow?.label ?? provKey,
             requests,
             successCount,
             failureCount,
-            totalTokens: totalTokens > 0 ? totalTokens : (baseRow?.totalTokens ?? 0),
+            totalTokens: providerTotalTokens || childTotalTokens || (baseRow?.totalTokens ?? 0),
             modelCount: childModels.length,
             cost: null,
             childModels,
