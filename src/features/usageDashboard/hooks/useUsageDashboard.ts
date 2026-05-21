@@ -40,6 +40,13 @@ const STORAGE_KEY_MEMORY_USAGE_DETAILS = 'cli-proxy-memory-usage-details';
 const MAX_MEMORY_USAGE_DETAILS = 500;
 const MEMORY_USAGE_DETAILS_TTL_MS = 60 * 60 * 1000;
 
+function formatMetricValue(value: number): string {
+  return value.toLocaleString('en-US', {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  });
+}
+
 function normalizeBoolean(value: unknown): boolean | undefined {
   if (typeof value === 'boolean') return value;
   if (typeof value === 'number') return value !== 0;
@@ -517,7 +524,7 @@ export function useUsageDashboard() {
     if (data.source === 'postgres') {
       const covered = deriveCoveredMinutes(data);
       if (covered !== null && covered > 0) {
-        return (data.summary.totalTokens / covered).toFixed(1);
+        return formatMetricValue(data.summary.totalTokens / covered);
       }
       return '-';
     }
@@ -535,7 +542,7 @@ export function useUsageDashboard() {
               (sum, d) => sum + tokenCountTotal(d.tokens), 0
             );
             if (recentTotalTokens > 0) {
-              return (recentTotalTokens / bucketCovered).toFixed(1);
+              return formatMetricValue(recentTotalTokens / bucketCovered);
             }
           }
         }
@@ -714,29 +721,7 @@ export function useUsageDashboard() {
         }
       }
 
-      const result: { totalTokens?: TrendBucket[]; inputTokens?: TrendBucket[]; outputTokens?: TrendBucket[]; rpm?: TrendBucket[]; tpm?: TrendBucket[] } = { rpm: rpmTrend };
-
-      if (data.summary.totalTokens > 0) {
-        const lastTs = rpmTrend[rpmTrend.length - 1]?.timestamp ?? duration;
-        result.totalTokens = [
-          { timestamp: lastTs - duration, value: data.summary.totalTokens },
-          { timestamp: lastTs, value: data.summary.totalTokens },
-        ];
-        if (data.summary.inputTokens > 0) {
-          result.inputTokens = [
-            { timestamp: lastTs - duration, value: data.summary.inputTokens },
-            { timestamp: lastTs, value: data.summary.inputTokens },
-          ];
-        }
-        if (data.summary.outputTokens > 0) {
-          result.outputTokens = [
-            { timestamp: lastTs - duration, value: data.summary.outputTokens },
-            { timestamp: lastTs, value: data.summary.outputTokens },
-          ];
-        }
-      }
-
-      return result;
+      return { rpm: rpmTrend };
     }
 
     if (mergedRecentBuckets.length === 1) {
@@ -748,24 +733,6 @@ export function useUsageDashboard() {
           { timestamp: ts, value: rpm },
           { timestamp: ts + duration, value: rpm },
         ],
-      };
-    }
-
-    if (data.summary.totalTokens > 0) {
-      const ts = duration;
-      return {
-        totalTokens: [
-          { timestamp: 0, value: data.summary.totalTokens },
-          { timestamp: ts, value: data.summary.totalTokens },
-        ],
-        inputTokens: data.summary.inputTokens > 0 ? [
-          { timestamp: 0, value: data.summary.inputTokens },
-          { timestamp: ts, value: data.summary.inputTokens },
-        ] : undefined,
-        outputTokens: data.summary.outputTokens > 0 ? [
-          { timestamp: 0, value: data.summary.outputTokens },
-          { timestamp: ts, value: data.summary.outputTokens },
-        ] : undefined,
       };
     }
 
