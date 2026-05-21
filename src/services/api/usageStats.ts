@@ -1215,11 +1215,18 @@ export function normalizeMemoryStats(
 
   for (const apiKeyRow of apiKeyRowMap.values()) {
     if (apiKeyRow.childModels.length > 0) {
-      apiKeyRow.totalTokens = apiKeyRow.childModels.reduce((sum, m) => sum + m.totalTokens, 0);
-      apiKeyRow.inputTokens = apiKeyRow.childModels.reduce((sum, m) => sum + m.inputTokens, 0);
-      apiKeyRow.outputTokens = apiKeyRow.childModels.reduce((sum, m) => sum + m.outputTokens, 0);
-      apiKeyRow.reasoningTokens = apiKeyRow.childModels.reduce((sum, m) => sum + m.reasoningTokens, 0);
-      apiKeyRow.cachedTokens = apiKeyRow.childModels.reduce((sum, m) => sum + m.cachedTokens, 0);
+      const childTotal = apiKeyRow.childModels.reduce((sum, m) => sum + m.totalTokens, 0);
+      const childInput = apiKeyRow.childModels.reduce((sum, m) => sum + m.inputTokens, 0);
+      const childOutput = apiKeyRow.childModels.reduce((sum, m) => sum + m.outputTokens, 0);
+      const childReasoning = apiKeyRow.childModels.reduce((sum, m) => sum + m.reasoningTokens, 0);
+      const childCached = apiKeyRow.childModels.reduce((sum, m) => sum + m.cachedTokens, 0);
+      if (childTotal > 0) {
+        apiKeyRow.totalTokens = childTotal;
+        apiKeyRow.inputTokens = childInput;
+        apiKeyRow.outputTokens = childOutput;
+        apiKeyRow.reasoningTokens = childReasoning;
+        apiKeyRow.cachedTokens = childCached;
+      }
     }
   }
 
@@ -1445,9 +1452,9 @@ export function maskApiKeyForDisplay(key: string): string {
   const trimmed = key.trim();
   if (trimmed.length <= 4) return trimmed;
   if (trimmed.length <= 8) {
-    return `${trimmed.slice(0, 2)}${'*'.repeat(trimmed.length - 4)}${trimmed.slice(-2)}`;
+    return `${trimmed.slice(0, 2)}***${trimmed.slice(-2)}`;
   }
-  return `${trimmed.slice(0, 4)}${'*'.repeat(trimmed.length - 8)}${trimmed.slice(-4)}`;
+  return `${trimmed.slice(0, 4)}***${trimmed.slice(-4)}`;
 }
 
 export function maskApiKey(key: string): string {
@@ -1543,10 +1550,27 @@ export function augmentMemoryStatsWithRequestLogs(
       ? { ...authFileAccounts[0] }
       : null;
 
+  const mutableApiKeyAccounts = apiKeyAccounts.map((a) => ({ ...a }));
+
   const byAccount = data.byAccount.map((a) => {
     if (singleAuthFile && a.key === singleAuthFile.key) return singleAuthFile;
+    const mutableApi = mutableApiKeyAccounts.find((m) => m.key === a.key);
+    if (mutableApi) return mutableApi;
     return { ...a };
   });
+
+  const apiKeyChildModelMap = new Map<string, Map<string, UsageStatsGroupRow>>();
+  for (const acct of mutableApiKeyAccounts) {
+    const childMap = new Map<string, UsageStatsGroupRow>();
+    const children = acct.childModels ?? [];
+    for (let i = 0; i < children.length; i++) {
+      const child = { ...children[i] };
+      children[i] = child;
+      childMap.set(child.key, child);
+    }
+    acct.childModels = children;
+    apiKeyChildModelMap.set(acct.key, childMap);
+  }
 
   const providerFallback =
     data.byProvider.filter((row) => row.requests > 0).length === 1
@@ -1607,7 +1631,29 @@ export function augmentMemoryStatsWithRequestLogs(
         singleAuthFile.childModels.push({ ...modelRow });
       }
     }
+
+    for (const acct of mutableApiKeyAccounts) {
+      const childMap = apiKeyChildModelMap.get(acct.key);
+      if (!childMap) continue;
+      const existingChild = childMap.get(modelKey);
+      if (existingChild) {
+        applyTokenCounts(existingChild, detail.tokens);
+        if (shouldAddModels) {
+          addCounts(existingChild, detail.success ? 1 : 0, detail.success ? 0 : 1);
+        }
+      }
+    }
   });
+
+  for (const acct of mutableApiKeyAccounts) {
+    const children = acct.childModels ?? [];
+    if (children.length === 0) continue;
+    acct.totalTokens = children.reduce((sum, m) => sum + m.totalTokens, 0);
+    acct.inputTokens = children.reduce((sum, m) => sum + m.inputTokens, 0);
+    acct.outputTokens = children.reduce((sum, m) => sum + m.outputTokens, 0);
+    acct.reasoningTokens = children.reduce((sum, m) => sum + m.reasoningTokens, 0);
+    acct.cachedTokens = children.reduce((sum, m) => sum + m.cachedTokens, 0);
+  }
 
   const byProvider = Array.from(providerMap.values());
 
