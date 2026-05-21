@@ -32,7 +32,10 @@ export function MetricCard({
       ? secondaryTrend?.[i]?.value
       : null,
   })).filter((item) => item.value !== null || item.secondary !== null);
-  const hasChartData = Boolean(chartData && chartData.length > 1);
+  const hasChartData = Boolean(
+    chartData && chartData.length > 1 &&
+    chartData.some((item) => (item.value ?? 0) > 0 || (item.secondary ?? 0) > 0)
+  );
 
   return (
     <div className={styles.card}>
