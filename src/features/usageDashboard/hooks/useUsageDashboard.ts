@@ -6,6 +6,7 @@ import {
   augmentMemoryStatsWithRequestLogs,
   collectMemoryStatsBuckets,
   normalizeMemoryStats,
+  filterBucketsByRange,
   deriveCoveredMinutes,
   deriveCoveredMinutesFromBuckets,
   computeApiKeyHash,
@@ -25,6 +26,7 @@ import type {
   ProviderDisplayRow,
   SourceDisplayRow,
   TrendBucket,
+  DataCoverageInfo,
 } from '@/types/usageStats';
 import {
   normalizeRecentRequestBuckets,
@@ -304,9 +306,16 @@ export function useUsageDashboard() {
   const [memoryDetailsSnapshot, setMemoryDetailsSnapshot] = useState<MemoryRequestLogDetail[]>([]);
 
   const abortRef = useRef<AbortController | null>(null);
+  const postgresAvailableRef = useRef<boolean | null>(null);
   const memoryUsageDetailsRef = useRef<MemoryRequestLogDetail[]>(
     loadCachedMemoryUsageDetails()
   );
+
+  const [dataCoverage, setDataCoverage] = useState<DataCoverageInfo | null>(null);
+
+  const resetPostgresDetection = useCallback(() => {
+    postgresAvailableRef.current = null;
+  }, []);
 
   const setServiceUrl = useCallback(
     (url: string) => {
@@ -331,38 +340,46 @@ export function useUsageDashboard() {
     setLoading(true);
     setError(null);
 
-    try {
-      const persistentData = await usageStatsApi.fetchPersistentStats(
-        serviceUrl,
-        managementKey,
-        range,
-      );
-      if (ac.signal.aborted) return;
-      if (
-        persistentData?.summary &&
-        persistentData.summary.totalRequests > 0
-      ) {
-        setDataSource('postgres');
-        setData({ ...persistentData, source: 'postgres' });
-        setLastRefreshTime(new Date().toLocaleTimeString());
-        setLoading(false);
-        return;
+    if (postgresAvailableRef.current !== false) {
+      try {
+        const persistentData = await usageStatsApi.fetchPersistentStats(
+          serviceUrl,
+          managementKey,
+          range,
+        );
+        if (ac.signal.aborted) return;
+        if (
+          persistentData?.summary &&
+          persistentData.summary.totalRequests > 0
+        ) {
+          postgresAvailableRef.current = true;
+          setDataSource('postgres');
+          setData({ ...persistentData, source: 'postgres' });
+          setDataCoverage(null);
+          setLastRefreshTime(new Date().toLocaleTimeString());
+          setLoading(false);
+          return;
+        }
+      } catch {
+        if (ac.signal.aborted) return;
+        postgresAvailableRef.current = false;
       }
-    } catch {
-      if (ac.signal.aborted) return;
     }
 
     try {
       const rawMemory = await usageStatsApi.fetchMemoryStats();
       if (ac.signal.aborted) return;
 
-      setMergedRecentBuckets(buildCanonicalBucketsFromRaw(rawMemory));
+      const canonicalBuckets = buildCanonicalBucketsFromRaw(rawMemory);
+      const { filtered: filteredBuckets, coverage } = filterBucketsByRange(canonicalBuckets, range);
+      setMergedRecentBuckets(filteredBuckets);
+      setDataCoverage(coverage);
 
       const configuredApiKeys = useConfigStore.getState().config?.apiKeys as string[] | undefined;
       const hashMap = await buildApiKeyHashMap(configuredApiKeys);
       if (ac.signal.aborted) return;
 
-      let normalized = normalizeMemoryStats(rawMemory, configuredApiKeys, hashMap);
+      let normalized = normalizeMemoryStats(rawMemory, configuredApiKeys, hashMap, range);
       const baseMemoryData = normalized;
 
       if (normalized.summary.totalRequests === 0) {
@@ -773,5 +790,7 @@ export function useUsageDashboard() {
     providerRows,
     sourceRows,
     metricTrends,
+    dataCoverage,
+    resetPostgresDetection,
   };
 }

@@ -4,6 +4,7 @@ import type {
   UsageStatsResponse,
   DashboardTimeRange,
   UsageStatsGroupRow,
+  DataCoverageInfo,
 } from '@/types/usageStats';
 import type { AuthFileItem, AuthFilesResponse } from '@/types/authFile';
 import {
@@ -1109,10 +1110,114 @@ export interface PrecomputedApiKeyHashMap {
   hashToMasked: Map<string, string>;
 }
 
+function rangeToMinutes(r: DashboardTimeRange): number | null {
+  switch (r) {
+    case '12h': return 12 * 60;
+    case '24h': return 24 * 60;
+    case 'today': {
+      const now = new Date();
+      return now.getHours() * 60 + now.getMinutes();
+    }
+    case 'yesterday': return 24 * 60;
+    case '7d': return 7 * 24 * 60;
+    case 'all': return null;
+    default: return null;
+  }
+}
+
+function rangeStartTimestamp(r: DashboardTimeRange): number | null {
+  const now = Date.now();
+  switch (r) {
+    case '12h': return now - 12 * 60 * 60 * 1000;
+    case '24h': return now - 24 * 60 * 60 * 1000;
+    case 'today': {
+      const d = new Date();
+      d.setHours(0, 0, 0, 0);
+      return d.getTime();
+    }
+    case 'yesterday': {
+      const d = new Date();
+      d.setHours(0, 0, 0, 0);
+      const end = d.getTime();
+      return end - 24 * 60 * 60 * 1000;
+    }
+    case '7d': return null;
+    case 'all': return null;
+    default: return null;
+  }
+}
+
+function rangeEndTimestamp(r: DashboardTimeRange): number | null {
+  if (r === 'yesterday') {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  }
+  return null;
+}
+
+export function filterBucketsByRange(
+  buckets: RecentRequestBucket[],
+  r: DashboardTimeRange,
+): { filtered: RecentRequestBucket[]; coverage: DataCoverageInfo } {
+  if (r === 'all' || r === '7d') {
+    const covered = buckets.length * RECENT_REQUEST_BUCKET_DURATION_MINUTES;
+    return {
+      filtered: buckets,
+      coverage: { partial: false, coveredMinutes: covered, requestedMinutes: covered },
+    };
+  }
+
+  if (buckets.length === 0) {
+    const requested = rangeToMinutes(r) ?? 0;
+    return {
+      filtered: [],
+      coverage: { partial: requested > 0, coveredMinutes: 0, requestedMinutes: requested },
+    };
+  }
+
+  const now = Date.now();
+  const duration = RECENT_REQUEST_BUCKET_DURATION_MINUTES * 60 * 1000;
+  const bucketTimestamps = buckets.map((_, i) => now - (buckets.length - 1 - i) * duration);
+
+  const startTs = rangeStartTimestamp(r);
+  const endTs = rangeEndTimestamp(r);
+
+  if (startTs === null) {
+    const covered = buckets.length * RECENT_REQUEST_BUCKET_DURATION_MINUTES;
+    const requested = rangeToMinutes(r) ?? covered;
+    return {
+      filtered: buckets,
+      coverage: { partial: covered < requested, coveredMinutes: covered, requestedMinutes: requested },
+    };
+  }
+
+  const filtered: RecentRequestBucket[] = [];
+  let coveredMinutes = 0;
+
+  for (let i = 0; i < buckets.length; i++) {
+    const bucketStart = bucketTimestamps[i];
+    const bucketEnd = bucketStart + duration;
+    const afterStart = bucketEnd > startTs;
+    const beforeEnd = endTs === null || bucketStart < endTs;
+    if (afterStart && beforeEnd) {
+      filtered.push(buckets[i]);
+      coveredMinutes += RECENT_REQUEST_BUCKET_DURATION_MINUTES;
+    }
+  }
+
+  const requested = rangeToMinutes(r) ?? 0;
+  return {
+    filtered,
+    coverage: { partial: coveredMinutes < requested, coveredMinutes, requestedMinutes: requested },
+  };
+}
+
 export function normalizeMemoryStats(
   raw: MemoryStatsPayload | ApiKeyUsageResponse,
   configuredApiKeys?: string[],
   precomputedHashMap?: PrecomputedApiKeyHashMap,
+  selectedRange?: DashboardTimeRange,
 ): UsageStatsResponse {
   const payload = unwrapMemoryStatsPayload(raw);
   const configuredKeyHashes = new Map<string, string>();
@@ -1357,7 +1462,7 @@ export function normalizeMemoryStats(
 
   return {
     source: 'memory',
-    range: 'all',
+    range: selectedRange ?? 'all',
     summary: {
       totalRequests,
       successCount: totalSuccess,
@@ -1551,6 +1656,10 @@ export function augmentMemoryStatsWithRequestLogs(
       : null;
 
   const mutableApiKeyAccounts = apiKeyAccounts.map((a) => ({ ...a }));
+  const singleApiKey =
+    apiKeyAccounts.length === 1 && authFileAccounts.length === 0
+      ? mutableApiKeyAccounts[0]
+      : null;
 
   const byAccount = data.byAccount.map((a) => {
     if (singleAuthFile && a.key === singleAuthFile.key) return singleAuthFile;
@@ -1586,6 +1695,8 @@ export function augmentMemoryStatsWithRequestLogs(
     if (shouldFillTokens) {
       if (singleAuthFile) {
         applyTokenCounts(singleAuthFile, detail.tokens);
+      } else if (singleApiKey) {
+        applyTokenCounts(singleApiKey, detail.tokens);
       } else {
         const providerRow = providerMap.get(providerKey);
         if (providerRow) {
@@ -1629,6 +1740,23 @@ export function augmentMemoryStatsWithRequestLogs(
         }
       } else {
         singleAuthFile.childModels.push({ ...modelRow });
+      }
+    }
+
+    if (singleApiKey) {
+      if (!singleApiKey.childModels) {
+        singleApiKey.childModels = [];
+      }
+      const existingChild = singleApiKey.childModels.find(
+        (m) => m.key === modelKey
+      );
+      if (existingChild) {
+        applyTokenCounts(existingChild, detail.tokens);
+        if (shouldAddModels) {
+          addCounts(existingChild, detail.success ? 1 : 0, detail.success ? 0 : 1);
+        }
+      } else {
+        singleApiKey.childModels.push({ ...modelRow });
       }
     }
 

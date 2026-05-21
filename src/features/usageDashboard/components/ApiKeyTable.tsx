@@ -162,6 +162,7 @@ export function ApiKeyTable({ rows, priceTable }: ApiKeyTableProps) {
                                     m.inputTokens,
                                     m.outputTokens,
                                     findPriceEntry(priceTable, m.label),
+                                    m.cachedTokens,
                                   );
                                   return (
                                     <tr key={m.key}>

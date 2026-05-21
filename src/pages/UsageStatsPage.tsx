@@ -49,6 +49,7 @@ export function UsageStatsPage() {
   }, [dashboard.range, dashboard.serviceUrl]);
 
   const handleRefresh = useCallback(() => {
+    dashboard.resetPostgresDetection();
     void dashboard.refresh();
     void dashboard.refreshHeatmap();
     autoRefresh.reset();
@@ -74,6 +75,7 @@ export function UsageStatsPage() {
         onRefresh={handleRefresh}
         loading={dashboard.loading}
         onOpenPriceManager={() => setPriceModalOpen(true)}
+        dataCoverage={dashboard.dataCoverage}
       />
 
       {dashboard.loading && !dashboard.data && (

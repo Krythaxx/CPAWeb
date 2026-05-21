@@ -10,7 +10,8 @@ export function calculateCost(
   if (priceEntry.inputPricePerM === 0 && priceEntry.outputPricePerM === 0 && (priceEntry.cacheHitPricePerM ?? 0) === 0) return null;
   const cacheHit = priceEntry.cacheHitPricePerM ?? 0;
   const cacheTokens = cachedTokens ?? 0;
-  return (inputTokens * priceEntry.inputPricePerM + cacheTokens * cacheHit + outputTokens * priceEntry.outputPricePerM) / 1_000_000;
+  const nonCacheInput = Math.max(inputTokens - cacheTokens, 0);
+  return (nonCacheInput * priceEntry.inputPricePerM + cacheTokens * cacheHit + outputTokens * priceEntry.outputPricePerM) / 1_000_000;
 }
 
 export function findPriceEntry(

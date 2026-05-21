@@ -153,3 +153,9 @@ export interface SourceDisplayRow {
   cost: number | null;
   childModels: UsageStatsGroupRow[];
 }
+
+export interface DataCoverageInfo {
+  partial: boolean;
+  coveredMinutes: number;
+  requestedMinutes: number;
+}
