@@ -438,10 +438,13 @@ export function useUsageDashboard() {
             Math.max(1, Math.min(normalized.summary.totalRequests, MAX_MEMORY_USAGE_DETAILS))
           );
           if (ac.signal.aborted) return;
+          console.log('[DEBUG] queueDetails raw:', JSON.stringify(queueDetails.slice(0, 3), null, 2));
+          console.log('[DEBUG] byProvider:', JSON.stringify(normalized.byProvider.map(p => ({ key: p.key, label: p.label, requests: p.requests, totalTokens: p.totalTokens })), null, 2));
           memoryUsageDetailsRef.current = mergeMemoryUsageDetails(
             memoryUsageDetailsRef.current,
             queueDetails
           );
+          console.log('[DEBUG] merged details sample:', memoryUsageDetailsRef.current.slice(0, 3).map(d => ({ provider: d.provider, model: d.model, apiKey: d.apiKey, tokens: d.tokens })));
           saveCachedMemoryUsageDetails(memoryUsageDetailsRef.current);
         } catch {
           if (ac.signal.aborted) return;
