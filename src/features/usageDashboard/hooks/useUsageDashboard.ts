@@ -439,7 +439,7 @@ export function useUsageDashboard() {
         clearCachedMemoryUsageDetails();
       }
 
-      if (needsMemoryDetailAugmentation(normalized)) {
+      if (normalized.summary.totalRequests > 0) {
         try {
           const queueDetails = await usageStatsApi.fetchMemoryUsageQueueDetails(
             Math.max(1, Math.min(normalized.summary.totalRequests, MAX_MEMORY_USAGE_DETAILS))
@@ -453,7 +453,9 @@ export function useUsageDashboard() {
         } catch {
           if (ac.signal.aborted) return;
         }
+      }
 
+      if (needsMemoryDetailAugmentation(normalized)) {
         const cachedDetails = selectMemoryUsageDetailsForStats(
           memoryUsageDetailsRef.current,
           normalized.summary.totalRequests
@@ -546,18 +548,18 @@ export function useUsageDashboard() {
       if (totalReqs === 0) return '-';
       const covered = deriveCoveredMinutesFromBuckets(mergedRecentBuckets);
       if (!covered || covered <= 0) return '-';
-      return (totalReqs / covered).toFixed(1);
+      return (totalReqs / covered).toFixed(2);
     }
     const covered = deriveCoveredMinutes(data);
     if (covered !== null && covered > 0) {
-      return (data.summary.totalRequests / covered).toFixed(1);
+      return (data.summary.totalRequests / covered).toFixed(2);
     }
     if (mergedRecentBuckets.length > 0) {
       const totalReqs = mergedRecentBuckets.reduce((t, b) => t + b.success + b.failed, 0);
       if (totalReqs > 0) {
         const bucketCovered = deriveCoveredMinutesFromBuckets(mergedRecentBuckets);
         if (bucketCovered && bucketCovered > 0) {
-          return (totalReqs / bucketCovered).toFixed(1);
+          return (totalReqs / bucketCovered).toFixed(2);
         }
       }
     }
@@ -606,30 +608,48 @@ export function useUsageDashboard() {
 
   const apiKeyRows = useMemo<ApiKeyDisplayRow[]>(() => {
     if (!data) return [];
-    const accountRows = data.byAccount ?? [];
-    return accountRows
-      .filter((account) => account.key.startsWith('api-key/') && account.requests > 0)
-      .map((account) => {
-        const childModels = account.childModels ?? [];
-        const hasModelAttribution = childModels.length > 0;
-        const parentTotalTokens = hasModelAttribution
-          ? childModels.reduce((sum, m) => sum + m.totalTokens, 0)
-          : account.totalTokens;
-        return {
-          key: account.key,
-          label: account.label,
-          requests: account.requests,
-          successCount: account.successCount,
-          failureCount: account.failureCount,
-          totalTokens: parentTotalTokens,
-          modelCount: hasModelAttribution ? new Set(childModels.map((m) => m.label)).size : -1,
-          cost: null,
-          hasModelAttribution,
-          childModels,
-        };
-      })
-      .sort((a, b) => b.requests - a.requests);
-  }, [data]);
+
+    if (memoryDetailsSnapshot.length > 0) {
+      const keyMap = new Map<string, {
+        requests: number;
+        successCount: number;
+        failureCount: number;
+        totalTokens: number;
+      }>();
+      for (const detail of memoryDetailsSnapshot) {
+        if (!detail.apiKey) continue;
+        const masked = maskApiKeyForDisplay(detail.apiKey);
+        const existing = keyMap.get(masked) ?? { requests: 0, successCount: 0, failureCount: 0, totalTokens: 0 };
+        existing.requests++;
+        if (detail.success) {
+          existing.successCount++;
+        } else {
+          existing.failureCount++;
+        }
+        existing.totalTokens += tokenCountTotal(detail.tokens);
+        keyMap.set(masked, existing);
+      }
+
+      if (keyMap.size > 0) {
+        return Array.from(keyMap.entries())
+          .map(([label, stats]) => ({
+            key: `client-key/${label}`,
+            label,
+            requests: stats.requests,
+            successCount: stats.successCount,
+            failureCount: stats.failureCount,
+            totalTokens: stats.totalTokens,
+            modelCount: -1,
+            cost: null,
+            hasModelAttribution: false,
+            childModels: [],
+          }))
+          .sort((a, b) => b.requests - a.requests);
+      }
+    }
+
+    return [];
+  }, [data, memoryDetailsSnapshot]);
 
   const authFileRows = useMemo<AuthFileDisplayRow[]>(() => {
     if (!data) return [];
@@ -779,6 +799,8 @@ export function useUsageDashboard() {
 
       const totalReqs = mergedRecentBuckets.reduce((t, b) => t + b.success + b.failed, 0);
       const totalToks = data.summary.totalTokens;
+      const totalInput = data.summary.inputTokens;
+      const totalOutput = data.summary.outputTokens;
 
       if (totalReqs > 0 && totalToks > 0) {
         const estimatedTpmTrend: TrendBucket[] = mergedRecentBuckets.map((b, i) => {
@@ -804,8 +826,34 @@ export function useUsageDashboard() {
           };
         });
 
+        const estimatedInputTrend: TrendBucket[] | undefined = totalInput > 0
+          ? mergedRecentBuckets.map((b, i) => {
+              const ts = b.time
+                ? new Date(b.time).getTime()
+                : i * duration;
+              return {
+                timestamp: ts,
+                value: totalInput * ((b.success + b.failed) / totalReqs),
+              };
+            })
+          : undefined;
+
+        const estimatedOutputTrend: TrendBucket[] | undefined = totalOutput > 0
+          ? mergedRecentBuckets.map((b, i) => {
+              const ts = b.time
+                ? new Date(b.time).getTime()
+                : i * duration;
+              return {
+                timestamp: ts,
+                value: totalOutput * ((b.success + b.failed) / totalReqs),
+              };
+            })
+          : undefined;
+
         return {
           totalTokens: estimatedTotalTrend,
+          inputTokens: estimatedInputTrend,
+          outputTokens: estimatedOutputTrend,
           rpm: rpmTrend,
           tpm: estimatedTpmTrend,
         };

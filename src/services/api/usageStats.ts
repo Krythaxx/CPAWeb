@@ -216,6 +216,7 @@ export interface MemoryRequestLogDetail {
   timestamp?: string;
   provider?: string;
   model?: string;
+  apiKey?: string;
   success: boolean;
   tokens: TokenCounts;
 }
@@ -799,12 +800,14 @@ function parseMemoryUsageQueueDetail(value: unknown): MemoryRequestLogDetail | n
 
   const id = readUsageQueueTextField(record, ['request_id', 'requestId', 'id']);
   const timestamp = readUsageQueueTextField(record, ['timestamp', 'time', 'created_at', 'createdAt']);
+  const apiKey = readUsageQueueTextField(record, ['api_key', 'apiKey']);
 
   return {
     ...(id ? { id } : {}),
     ...(timestamp ? { timestamp } : {}),
     ...(provider ? { provider } : {}),
     ...(model ? { model } : {}),
+    ...(apiKey ? { apiKey } : {}),
     success: readUsageQueueSuccess(record),
     tokens,
   };
