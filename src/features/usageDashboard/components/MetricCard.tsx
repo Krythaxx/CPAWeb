@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import { ResponsiveContainer, AreaChart, Area } from 'recharts';
 import type { TrendBucket } from '@/types/usageStats';
 import styles from './MetricCard.module.scss';
@@ -21,11 +22,15 @@ export function MetricCard({
   secondaryTrend,
   secondaryColor = '#10b981',
 }: MetricCardProps) {
+  const gradientId = useId().replace(/:/g, '');
   const chartData = trend?.map((t, i) => ({
     idx: i,
-    value: t.value,
-    secondary: secondaryTrend?.[i]?.value ?? undefined,
-  }));
+    value: Number.isFinite(t.value) ? t.value : null,
+    secondary: Number.isFinite(secondaryTrend?.[i]?.value)
+      ? secondaryTrend?.[i]?.value
+      : null,
+  })).filter((item) => item.value !== null || item.secondary !== null);
+  const hasChartData = Boolean(chartData && chartData.length > 1);
 
   return (
     <div className={styles.card}>
@@ -35,11 +40,11 @@ export function MetricCard({
       <div className={styles.value}>{value}</div>
       {subtitle && <div className={styles.subtitle}>{subtitle}</div>}
       <div className={styles.chartArea}>
-        {chartData && chartData.length > 1 ? (
+        {hasChartData ? (
           <ResponsiveContainer width="100%" height={48}>
             <AreaChart data={chartData} margin={{ top: 2, right: 0, left: 0, bottom: 2 }}>
               <defs>
-                <linearGradient id={`grad-${title}`} x1="0" y1="0" x2="0" y2="1">
+                <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor={trendColor} stopOpacity={0.2} />
                   <stop offset="100%" stopColor={trendColor} stopOpacity={0} />
                 </linearGradient>
@@ -60,7 +65,7 @@ export function MetricCard({
                 dataKey="value"
                 stroke={trendColor}
                 strokeWidth={1.5}
-                fill={`url(#grad-${title})`}
+                fill={`url(#${gradientId})`}
                 isAnimationActive={false}
                 dot={false}
               />

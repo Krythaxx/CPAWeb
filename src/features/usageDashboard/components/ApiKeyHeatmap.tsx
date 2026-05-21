@@ -68,17 +68,33 @@ export function ApiKeyHeatmap({
   useEffect(() => {
     const el = gridRef.current;
     if (!el) return;
+    let resizeFrame: number | null = null;
 
     const measure = () => {
-      const width = el.clientWidth;
+      const width = Number.isFinite(el.clientWidth) ? el.clientWidth : 0;
       const cols = Math.floor(width / (DOT_SIZE + GAP));
       setColCount(Math.max(cols, 20));
     };
 
     measure();
-    const observer = new ResizeObserver(measure);
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', measure);
+      return () => window.removeEventListener('resize', measure);
+    }
+
+    const observer = new ResizeObserver(() => {
+      if (resizeFrame !== null) {
+        cancelAnimationFrame(resizeFrame);
+      }
+      resizeFrame = requestAnimationFrame(measure);
+    });
     observer.observe(el);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      if (resizeFrame !== null) {
+        cancelAnimationFrame(resizeFrame);
+      }
+    };
   }, []);
 
   const displayBuckets = useMemo<DisplayBucket[]>(() => {

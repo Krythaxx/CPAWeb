@@ -7,7 +7,21 @@ function loadTable(): PriceEntry[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
-    return JSON.parse(raw) as PriceEntry[];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((entry): entry is PriceEntry => {
+      if (!entry || typeof entry !== 'object') return false;
+      const record = entry as Partial<PriceEntry>;
+      return (
+        typeof record.model === 'string' &&
+        typeof record.inputPricePerM === 'number' &&
+        Number.isFinite(record.inputPricePerM) &&
+        typeof record.cacheHitPricePerM === 'number' &&
+        Number.isFinite(record.cacheHitPricePerM) &&
+        typeof record.outputPricePerM === 'number' &&
+        Number.isFinite(record.outputPricePerM)
+      );
+    });
   } catch {
     return [];
   }

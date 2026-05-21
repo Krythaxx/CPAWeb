@@ -426,7 +426,6 @@ export function useUsageDashboard() {
       const canonicalBuckets = buildCanonicalBucketsFromRaw(rawMemory);
       const { filtered: filteredBuckets, coverage } = filterBucketsByRange(canonicalBuckets, range);
       setMergedRecentBuckets(filteredBuckets);
-      setDataCoverage(coverage);
 
       const configuredApiKeys = useConfigStore.getState().config?.apiKeys as string[] | undefined;
       const hashMap = await buildApiKeyHashMap(configuredApiKeys);
@@ -494,12 +493,14 @@ export function useUsageDashboard() {
       ) {
         setDataSource('unavailable');
         setData(null);
+        setDataCoverage(null);
         setError(t('usage_stats.empty_memory_disabled'));
         return;
       }
 
       setDataSource('memory');
       setData(normalized);
+      setDataCoverage(coverage);
       setMemoryDetailsSnapshot(memoryUsageDetailsRef.current);
       setLastRefreshTime(new Date().toLocaleTimeString());
     } catch (err: unknown) {
@@ -511,6 +512,7 @@ export function useUsageDashboard() {
       }
       setDataSource('error');
       setData(null);
+      setDataCoverage(null);
       setError(finalMessage);
     } finally {
       setLoading(false);

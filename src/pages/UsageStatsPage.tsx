@@ -75,7 +75,7 @@ export function UsageStatsPage() {
         onRefresh={handleRefresh}
         loading={dashboard.loading}
         onOpenPriceManager={() => setPriceModalOpen(true)}
-        dataCoverage={dashboard.dataCoverage}
+        dataCoverage={isMemory && dashboard.data ? dashboard.dataCoverage : null}
       />
 
       {dashboard.loading && !dashboard.data && (
