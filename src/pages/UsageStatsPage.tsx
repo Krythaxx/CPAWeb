@@ -136,6 +136,11 @@ export function UsageStatsPage() {
           </div>
 
           <div className={styles.tablesGrid}>
+            {isMemory && (
+              <div className={styles.tableNote}>
+                {t('usage_dashboard.lifetime_totals')}
+              </div>
+            )}
             <ApiKeyTable
               rows={dashboard.apiKeyRows}
               priceTable={priceTable}

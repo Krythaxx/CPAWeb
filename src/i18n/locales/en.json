@@ -1532,6 +1532,8 @@
     "tokens_per_minute": "Tokens per minute",
     "source_usage": "Provider Statistics",
     "col_source": "Source",
-    "col_type": "Type"
+    "col_type": "Type",
+    "coverage_warning": "Heatmap and RPM data covers approximately 3.3 hours in memory mode",
+    "lifetime_totals": "(Lifetime totals)"
   }
 }

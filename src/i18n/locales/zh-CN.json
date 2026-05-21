@@ -1532,6 +1532,8 @@
     "tokens_per_minute": "每分钟 Token 数",
     "source_usage": "提供商统计",
     "col_source": "来源",
-    "col_type": "类型"
+    "col_type": "类型",
+    "coverage_warning": "内存模式的热力图和 RPM 数据仅覆盖约 3.3 小时",
+    "lifetime_totals": "（累计数据）"
   }
 }

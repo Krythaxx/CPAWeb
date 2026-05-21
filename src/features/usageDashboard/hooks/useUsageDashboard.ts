@@ -471,11 +471,13 @@ export function useUsageDashboard() {
       const raw = await usageStatsApi.fetchMemoryStats();
       const canonicalBuckets = collectMemoryStatsBuckets(raw);
       setHeatmapBuckets(buildHeatmapBuckets(canonicalBuckets));
-      setMergedRecentBuckets(buildCanonicalBucketsFromRaw(raw));
+      const allBuckets = buildCanonicalBucketsFromRaw(raw);
+      const { filtered: filteredBuckets } = filterBucketsByRange(allBuckets, range);
+      setMergedRecentBuckets(filteredBuckets);
     } catch {
       setHeatmapBuckets([]);
     }
-  }, [managementKey]);
+  }, [managementKey, range]);
 
   useEffect(() => {
     return () => {
