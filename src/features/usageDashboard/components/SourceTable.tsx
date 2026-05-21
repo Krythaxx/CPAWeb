@@ -168,6 +168,7 @@ export function SourceTable({ rows, priceTable }: SourceTableProps) {
                                     m.inputTokens,
                                     m.outputTokens,
                                     findPriceEntry(priceTable, m.label),
+                                    m.cachedTokens,
                                   );
                                   return (
                                     <tr key={m.key}>

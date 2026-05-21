@@ -273,6 +273,10 @@ export const usageStatsApi = {
       throw apiKeyUsageResult.reason;
     }
 
+    if (apiKeyUsageResult.status === 'rejected') {
+      console.warn('[UsageStats] /api-key-usage request failed:', apiKeyUsageResult.reason);
+    }
+
     return {
       apiKeyUsage: apiKeyUsageResult.status === 'fulfilled' ? apiKeyUsageResult.value : {},
       authFiles:
@@ -1265,7 +1269,12 @@ export function normalizeMemoryStats(
   let apiKeyTokenCounts = emptyTokenCounts();
   let authFileRequestTotal = 0;
 
-  for (const [rawProviderKey, keyEntries] of Object.entries(payload.apiKeyUsage || {})) {
+  const rawApiKeyEntries = Object.entries(payload.apiKeyUsage || {});
+  if (rawApiKeyEntries.length === 0) {
+    console.warn('[UsageStats] apiKeyUsage is empty — /api-key-usage returned no data');
+  }
+
+  for (const [rawProviderKey, keyEntries] of rawApiKeyEntries) {
     const providerKey = normalizeProviderKey(rawProviderKey);
     if (!keyEntries || typeof keyEntries !== 'object') continue;
 

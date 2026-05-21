@@ -637,9 +637,9 @@ export function useUsageDashboard() {
     return accountRows
       .filter((account) => account.key.startsWith('auth-file/') && account.requests > 0)
       .map((account) => {
-        const childModels = account.childModels ?? data.byModel.filter(
-          (m) => m.provider === account.provider,
-        );
+        const childModels = account.childModels ?? (account.provider
+          ? data.byModel.filter((m) => m.provider === account.provider)
+          : []);
         const childTotalTokens = childModels.reduce((sum, m) => sum + m.totalTokens, 0);
         return {
           key: account.key,
@@ -669,7 +669,7 @@ export function useUsageDashboard() {
       .map((row) => {
         const childModels = data.byModel.filter(
           (m) =>
-            (m.provider === row.label || m.key.startsWith(row.key)) &&
+            (m.provider === row.label || m.key.startsWith(row.key + '/')) &&
             !authFileOwnedModelKeys.has(m.key),
         );
         const childTotalTokens = childModels.reduce((sum, m) => sum + m.totalTokens, 0);
@@ -713,12 +713,19 @@ export function useUsageDashboard() {
 
     if (data.source === 'postgres' && data.summary) {
       const s = data.summary;
+      const covered = deriveCoveredMinutes(data);
+      const tpmTrend = s.tokenTrend && covered && covered > 0 && s.tokenTrend.length > 0
+        ? s.tokenTrend.map((p) => ({
+            timestamp: p.timestamp,
+            value: p.value / (covered / s.tokenTrend!.length),
+          }))
+        : undefined;
       return {
         totalTokens: s.tokenTrend,
         inputTokens: s.inputOutputTrend,
         outputTokens: s.cacheTrend,
         rpm: s.requestTrend,
-        tpm: s.tokenTrend,
+        tpm: tpmTrend,
       };
     }
 
