@@ -28,6 +28,7 @@ import type {
   TrendBucket,
   DataCoverageInfo,
   UsageStatsSummary,
+  UsageStatsGroupRow,
 } from '@/types/usageStats';
 import {
   normalizeRecentRequestBuckets,
@@ -187,22 +188,14 @@ function mergeMemoryUsageDetails(
   return Array.from(merged.values()).slice(-MAX_MEMORY_USAGE_DETAILS);
 }
 
-function buildTwoPointTrend(start: number, end: number, value: number): TrendBucket[] | undefined {
-  if (value <= 0) {
-    return undefined;
-  }
-
+function buildTwoPointTrend(start: number, end: number, value: number): TrendBucket[] {
   return [
     { timestamp: start, value: 0 },
     { timestamp: end, value },
   ];
 }
 
-function buildFlatTwoPointTrend(start: number, end: number, value: number): TrendBucket[] | undefined {
-  if (value <= 0) {
-    return undefined;
-  }
-
+function buildFlatTwoPointTrend(start: number, end: number, value: number): TrendBucket[] {
   return [
     { timestamp: start, value },
     { timestamp: end, value },
@@ -615,35 +608,80 @@ export function useUsageDashboard() {
         successCount: number;
         failureCount: number;
         totalTokens: number;
+        models: Map<string, {
+          requests: number;
+          successCount: number;
+          failureCount: number;
+          inputTokens: number;
+          outputTokens: number;
+          reasoningTokens: number;
+          cachedTokens: number;
+          totalTokens: number;
+        }>;
       }>();
       for (const detail of memoryDetailsSnapshot) {
         if (!detail.apiKey) continue;
         const masked = maskApiKeyForDisplay(detail.apiKey);
-        const existing = keyMap.get(masked) ?? { requests: 0, successCount: 0, failureCount: 0, totalTokens: 0 };
-        existing.requests++;
-        if (detail.success) {
-          existing.successCount++;
-        } else {
-          existing.failureCount++;
+        let entry = keyMap.get(masked);
+        if (!entry) {
+          entry = { requests: 0, successCount: 0, failureCount: 0, totalTokens: 0, models: new Map() };
+          keyMap.set(masked, entry);
         }
-        existing.totalTokens += tokenCountTotal(detail.tokens);
-        keyMap.set(masked, existing);
+        entry.requests++;
+        if (detail.success) {
+          entry.successCount++;
+        } else {
+          entry.failureCount++;
+        }
+        entry.totalTokens += tokenCountTotal(detail.tokens);
+
+        const modelName = detail.model || 'unknown';
+        let m = entry.models.get(modelName);
+        if (!m) {
+          m = { requests: 0, successCount: 0, failureCount: 0, inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cachedTokens: 0, totalTokens: 0 };
+          entry.models.set(modelName, m);
+        }
+        m.requests++;
+        if (detail.success) { m.successCount++; } else { m.failureCount++; }
+        m.inputTokens += detail.tokens.inputTokens;
+        m.outputTokens += detail.tokens.outputTokens;
+        m.reasoningTokens += detail.tokens.reasoningTokens;
+        m.cachedTokens += detail.tokens.cachedTokens;
+        m.totalTokens += tokenCountTotal(detail.tokens);
       }
 
       if (keyMap.size > 0) {
         return Array.from(keyMap.entries())
-          .map(([label, stats]) => ({
-            key: `client-key/${label}`,
-            label,
-            requests: stats.requests,
-            successCount: stats.successCount,
-            failureCount: stats.failureCount,
-            totalTokens: stats.totalTokens,
-            modelCount: -1,
-            cost: null,
-            hasModelAttribution: false,
-            childModels: [],
-          }))
+          .map(([label, stats]) => {
+            const childModels: UsageStatsGroupRow[] = Array.from(stats.models.entries())
+              .map(([modelName, ms]) => ({
+                key: modelName,
+                label: modelName,
+                requests: ms.requests,
+                successCount: ms.successCount,
+                failureCount: ms.failureCount,
+                successRate: ms.requests > 0 ? ms.successCount / ms.requests : 0,
+                inputTokens: ms.inputTokens,
+                outputTokens: ms.outputTokens,
+                reasoningTokens: ms.reasoningTokens,
+                cachedTokens: ms.cachedTokens,
+                cacheTokens: ms.cachedTokens,
+                totalTokens: ms.totalTokens,
+              }))
+              .sort((a, b) => b.requests - a.requests);
+            return {
+              key: `client-key/${label}`,
+              label,
+              requests: stats.requests,
+              successCount: stats.successCount,
+              failureCount: stats.failureCount,
+              totalTokens: stats.totalTokens,
+              modelCount: childModels.length,
+              cost: null,
+              hasModelAttribution: childModels.length > 0,
+              childModels,
+            };
+          })
           .sort((a, b) => b.requests - a.requests);
       }
     }
