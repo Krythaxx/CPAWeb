@@ -317,7 +317,7 @@ export const usageStatsApi = {
   async probeService(serviceUrl: string): Promise<boolean> {
     try {
       const base = resolveServiceUrl(serviceUrl);
-      await axios.get(`${base}/usage-service/info`, {
+      await axios.get(`${base}/healthz`, {
         timeout: 3000,
       });
       return true;
@@ -1151,6 +1151,10 @@ function normalizePersistentStatsResponse(
   const byModel = normalizePersistentGroupRows(
     readKnownField(record, ['byModel', 'by_model', 'models', 'modelUsage', 'model_usage'])
   );
+  const byProvider = normalizePersistentGroupRows(
+    readKnownField(record, ['byProvider', 'by_provider', 'providers'])
+  );
+  const heatmap = normalizeHeatmapBuckets(readKnownField(record, ['heatmap', 'buckets'])) ?? [];
 
   const summaryTokens = readAggregateTokenCounts(summaryRecord);
   const rowTokenTotal = byApiKey.reduce((sum, row) => sum + row.totalTokens, 0);
@@ -1225,6 +1229,8 @@ function normalizePersistentStatsResponse(
     summary,
     byApiKey,
     byModel,
+    ...(byProvider.length > 0 ? { byProvider } : {}),
+    ...(heatmap.length > 0 ? { heatmap } : {}),
     ...(isRecord(record.service) ? { service: record.service as unknown as UsageStatsResponse['service'] } : {}),
   };
 }

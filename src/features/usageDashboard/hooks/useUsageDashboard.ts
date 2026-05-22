@@ -41,6 +41,7 @@ import {
 
 const STORAGE_KEY_SERVICE_URL = 'cli-proxy-usage-service-url';
 const STORAGE_KEY_MEMORY_USAGE_DETAILS = 'cli-proxy-memory-usage-details';
+const USAGE_SERVICE_PORT = '18317';
 const MAX_MEMORY_USAGE_DETAILS = 500;
 const MEMORY_USAGE_DETAILS_TTL_MS = 60 * 60 * 1000;
 
@@ -66,9 +67,10 @@ function deriveDefaultServiceUrl(apiBase: string): string {
   try {
     const base = normalizeApiBase(apiBase);
     const url = new URL(base);
+    url.port = USAGE_SERVICE_PORT;
     return url.origin;
   } catch {
-    return `http://localhost:18317`;
+    return `http://localhost:${USAGE_SERVICE_PORT}`;
   }
 }
 
@@ -581,6 +583,11 @@ export function useUsageDashboard() {
     [apiBase],
   );
 
+  useEffect(() => {
+    if (localStorage.getItem(STORAGE_KEY_SERVICE_URL)) return;
+    setServiceUrlState(deriveDefaultServiceUrl(apiBase));
+  }, [apiBase]);
+
   const fetchData = useCallback(async () => {
     if (!managementKey) return;
 
@@ -594,23 +601,35 @@ export function useUsageDashboard() {
     try {
       if (postgresAvailableRef.current !== false) {
         try {
-          const [persistentData, heatmapData, providersData, accountsData] = await Promise.all([
-            usageStatsApi.fetchPersistentStats(serviceUrl, managementKey, range),
-            usageStatsApi.fetchRequestHeatmap(serviceUrl, managementKey, range),
-            usageStatsApi.fetchProviders(serviceUrl, managementKey, range),
-            usageStatsApi.fetchAccounts(serviceUrl, managementKey),
-          ]);
+          const persistentData = await usageStatsApi.fetchPersistentStats(serviceUrl, managementKey, range);
           if (ac.signal.aborted) return;
           if (persistentData?.summary) {
             postgresAvailableRef.current = true;
             const normalizedPersistentData = { ...persistentData, source: 'postgres' as const };
+            const [heatmapResult, providersResult, accountsResult] = await Promise.allSettled([
+              usageStatsApi.fetchRequestHeatmap(serviceUrl, managementKey, range),
+              usageStatsApi.fetchProviders(serviceUrl, managementKey, range),
+              usageStatsApi.fetchAccounts(serviceUrl, managementKey),
+            ]);
+            if (ac.signal.aborted) return;
+
             setDataSource('postgres');
             setData(normalizedPersistentData);
             setDataCoverage(null);
             setMergedRecentBuckets([]);
-            setPostgresProviders(providersData?.providers ?? []);
-            setPostgresAccounts(accountsData?.accounts ?? []);
-            setHeatmapBuckets(heatmapData?.buckets ?? buildPersistentHeatmapBuckets(normalizedPersistentData));
+            setPostgresProviders(
+              providersResult.status === 'fulfilled'
+                ? providersResult.value.providers
+                : (normalizedPersistentData.byProvider ?? [])
+            );
+            setPostgresAccounts(
+              accountsResult.status === 'fulfilled' ? accountsResult.value.accounts : []
+            );
+            setHeatmapBuckets(
+              heatmapResult.status === 'fulfilled'
+                ? heatmapResult.value.buckets
+                : buildPersistentHeatmapBuckets(normalizedPersistentData)
+            );
             setLastRefreshTime(new Date().toLocaleTimeString());
             return;
           }
@@ -735,7 +754,14 @@ export function useUsageDashboard() {
           }
         } catch {
           if (postgresAvailableRef.current === true) {
-            setHeatmapBuckets([]);
+            try {
+              const persistentData = await usageStatsApi.fetchPersistentStats(serviceUrl, managementKey, range);
+              const normalizedPersistentData = { ...persistentData, source: 'postgres' as const };
+              setHeatmapBuckets(buildPersistentHeatmapBuckets(normalizedPersistentData));
+              setMergedRecentBuckets([]);
+            } catch {
+              setHeatmapBuckets([]);
+            }
             return;
           }
         }
