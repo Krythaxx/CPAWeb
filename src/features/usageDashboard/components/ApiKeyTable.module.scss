@@ -39,10 +39,11 @@
 }
 
 .table {
-  width: 100%;
-  min-width: 560px;
+  width: max(100%, 580px);
+  min-width: 580px;
   border-collapse: collapse;
   font-size: 13px;
+  table-layout: fixed;
 
   th, td {
     padding: 8px 10px;
@@ -62,6 +63,30 @@
     background: var(--bg-primary, #fff);
     z-index: 1;
   }
+}
+
+.expandCol {
+  width: 28px;
+}
+
+.keyCol {
+  width: 112px;
+}
+
+.requestsCol {
+  width: 150px;
+}
+
+.tokenCol {
+  width: 92px;
+}
+
+.modelCountCol {
+  width: 80px;
+}
+
+.costCol {
+  width: 118px;
 }
 
 .sortable {
@@ -97,17 +122,21 @@
 .keyCell {
   font-family: monospace;
   font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .requestCell {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  max-width: 100%;
 }
 
 .requestBreakdown {
   font-size: 11px;
   color: var(--text-secondary, #6b7280);
+  flex: 0 0 auto;
 }
 
 .success {

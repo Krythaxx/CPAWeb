@@ -83,6 +83,14 @@ export function ApiKeyTable({ rows, priceTable }: ApiKeyTableProps) {
       </div>
       <div className={styles.scroll}>
         <table className={styles.table}>
+          <colgroup>
+            <col className={styles.expandCol} />
+            <col className={styles.keyCol} />
+            <col className={styles.requestsCol} />
+            <col className={styles.tokenCol} />
+            <col className={styles.modelCountCol} />
+            <col className={styles.costCol} />
+          </colgroup>
           <thead>
             <tr>
               <th />

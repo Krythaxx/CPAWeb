@@ -156,14 +156,18 @@ export function UsageStatsPage() {
                 {t('usage_dashboard.lifetime_totals')}
               </div>
             )}
-            <ApiKeyTable
-              rows={dashboard.apiKeyRows}
-              priceTable={priceTable}
-            />
-            <ModelTable
-              rows={dashboard.data.byModel.filter((r) => r.requests > 0)}
-              priceTable={priceTable}
-            />
+            <div className={`${styles.tablePanel} ${styles.apiKeyTablePanel}`}>
+              <ApiKeyTable
+                rows={dashboard.apiKeyRows}
+                priceTable={priceTable}
+              />
+            </div>
+            <div className={`${styles.tablePanel} ${styles.modelTablePanel}`}>
+              <ModelTable
+                rows={dashboard.data.byModel.filter((r) => r.requests > 0)}
+                priceTable={priceTable}
+              />
+            </div>
           </div>
 
           <SourceTable
