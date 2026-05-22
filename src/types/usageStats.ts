@@ -58,6 +58,7 @@ export interface UsageStatsResponse {
   byModel: UsageStatsGroupRow[];
   byProvider: UsageStatsGroupRow[];
   byAccount: UsageStatsGroupRow[];
+  heatmap?: HeatmapBucket[];
   service?: UsageStatsServiceInfo;
 }
 

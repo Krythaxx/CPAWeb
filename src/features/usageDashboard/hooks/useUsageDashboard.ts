@@ -232,6 +232,166 @@ function needsMemoryDetailAugmentation(data: UsageStatsResponse): boolean {
   );
 }
 
+function getApiKeyAccountIdentity(account: UsageStatsGroupRow): string {
+  return account.key.startsWith('api-key/')
+    ? account.key.slice('api-key/'.length)
+    : account.key;
+}
+
+function readStringProp(
+  row: UsageStatsGroupRow,
+  keys: string[],
+): string | undefined {
+  const record = row as unknown as Record<string, unknown>;
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+  }
+  return undefined;
+}
+
+function readChildModels(account: UsageStatsGroupRow): UsageStatsGroupRow[] {
+  const record = account as unknown as Record<string, unknown>;
+  if (Array.isArray(account.childModels)) {
+    return account.childModels;
+  }
+  return Array.isArray(record.child_models)
+    ? (record.child_models as UsageStatsGroupRow[])
+    : [];
+}
+
+function getApiKeyAccountCandidates(account: UsageStatsGroupRow): Set<string> {
+  const candidates = new Set<string>();
+  const add = (value: unknown) => {
+    if (typeof value !== 'string') return;
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    candidates.add(trimmed);
+    if (trimmed.startsWith('api-key/')) {
+      candidates.add(trimmed.slice('api-key/'.length));
+    }
+  };
+
+  add(account.key);
+  add(getApiKeyAccountIdentity(account));
+  add(readStringProp(account, ['apiKeyHash', 'api_key_hash', 'clientApiKeyHash', 'client_api_key_hash']));
+  add(readStringProp(account, ['apiKeyIdentity', 'api_key_identity', 'clientApiKeyIdentity', 'client_api_key_identity']));
+  return candidates;
+}
+
+function getModelAttributionCandidates(model: UsageStatsGroupRow): string[] {
+  return [
+    readStringProp(model, ['apiKeyIdentity', 'api_key_identity', 'clientApiKeyIdentity', 'client_api_key_identity']),
+    readStringProp(model, ['apiKeyHash', 'api_key_hash', 'clientApiKeyHash', 'client_api_key_hash']),
+  ].filter(
+    (value): value is string => typeof value === 'string' && value.trim().length > 0
+  );
+}
+
+function getModelMergeKey(model: UsageStatsGroupRow): string {
+  return (model.model || model.label || model.key).trim().toLowerCase();
+}
+
+function hasTokenUsage(row: UsageStatsGroupRow): boolean {
+  return (
+    row.totalTokens +
+      row.inputTokens +
+      row.outputTokens +
+      row.reasoningTokens +
+      row.cachedTokens >
+    0
+  );
+}
+
+function mergeApiKeyModelRows(
+  directChildren: UsageStatsGroupRow[],
+  derivedChildren: UsageStatsGroupRow[],
+): UsageStatsGroupRow[] {
+  const merged = new Map<string, UsageStatsGroupRow>();
+
+  [...directChildren, ...derivedChildren].forEach((model) => {
+    const key = getModelMergeKey(model);
+    const existing = merged.get(key);
+    if (!existing) {
+      merged.set(key, { ...model });
+      return;
+    }
+
+    const keepIncomingTokens = hasTokenUsage(model) && !hasTokenUsage(existing);
+    const keepIncomingCounts =
+      model.requests > existing.requests ||
+      (model.requests === existing.requests && model.successCount + model.failureCount > existing.successCount + existing.failureCount);
+
+    merged.set(key, {
+      ...existing,
+      ...(keepIncomingCounts
+        ? {
+            requests: model.requests,
+            successCount: model.successCount,
+            failureCount: model.failureCount,
+            successRate: model.successRate,
+          }
+        : {}),
+      ...(keepIncomingTokens
+        ? {
+            inputTokens: model.inputTokens,
+            outputTokens: model.outputTokens,
+            reasoningTokens: model.reasoningTokens,
+            cachedTokens: model.cachedTokens,
+            cacheTokens: model.cacheTokens,
+            totalTokens: model.totalTokens,
+          }
+        : {}),
+    });
+  });
+
+  return Array.from(merged.values()).sort((a, b) => b.requests - a.requests);
+}
+
+function deriveApiKeyChildModels(
+  account: UsageStatsGroupRow,
+  byModel: UsageStatsGroupRow[],
+): UsageStatsGroupRow[] {
+  const accountCandidates = getApiKeyAccountCandidates(account);
+  if (accountCandidates.size === 0) {
+    return [];
+  }
+
+  return byModel
+    .filter((model) =>
+      getModelAttributionCandidates(model).some((candidate) =>
+        accountCandidates.has(candidate.trim())
+      )
+    )
+    .map((model) => ({ ...model }))
+    .sort((a, b) => b.requests - a.requests);
+}
+
+function buildApiKeyDisplayRow(
+  account: UsageStatsGroupRow,
+  byModel: UsageStatsGroupRow[],
+): ApiKeyDisplayRow {
+  const directChildren = readChildModels(account);
+  const derivedChildren = deriveApiKeyChildModels(account, byModel);
+  const childModels = mergeApiKeyModelRows(directChildren, derivedChildren);
+  const childTotalTokens = childModels.reduce((sum, model) => sum + model.totalTokens, 0);
+
+  return {
+    key: account.key,
+    label: account.label,
+    requests: account.requests,
+    successCount: account.successCount,
+    failureCount: account.failureCount,
+    totalTokens: childTotalTokens > 0 ? childTotalTokens : account.totalTokens,
+    modelCount: new Set(childModels.map((model) => model.label)).size,
+    cost: null,
+    hasModelAttribution: childModels.length > 0,
+    childModels,
+  };
+}
+
 async function buildApiKeyHashMap(configuredApiKeys: string[] | undefined): Promise<PrecomputedApiKeyHashMap> {
   const rawToMasked = new Map<string, string>();
   const hashToMasked = new Map<string, string>();
@@ -271,6 +431,38 @@ function buildHeatmapBuckets(buckets: RecentRequestBucket[]): HeatmapBucket[] {
       success: b.success,
       failed: b.failed,
       successRate: b.success + b.failed > 0 ? b.success / (b.success + b.failed) : 0,
+    };
+  });
+}
+
+function buildPersistentHeatmapBuckets(data: UsageStatsResponse): HeatmapBucket[] {
+  if (data.heatmap && data.heatmap.length > 0) {
+    return data.heatmap;
+  }
+
+  const trend = data.summary.requestTrend;
+  if (!trend || trend.length === 0) {
+    return [];
+  }
+
+  const fallbackDuration = RECENT_REQUEST_BLOCK_DURATION_MS;
+  return trend.map((bucket, index) => {
+    const next = trend[index + 1];
+    const timeStart = bucket.timestamp;
+    const timeEnd =
+      next && next.timestamp > timeStart
+        ? next.timestamp
+        : timeStart + fallbackDuration;
+    const total = Math.max(0, Math.round(bucket.value));
+    const success = Math.round(total * data.summary.successRate);
+    const failed = Math.max(0, total - success);
+
+    return {
+      timeStart,
+      timeEnd,
+      success,
+      failed,
+      successRate: total > 0 ? success / total : 0,
     };
   });
 }
@@ -389,9 +581,12 @@ export function useUsageDashboard() {
             persistentData?.summary
           ) {
             postgresAvailableRef.current = true;
+            const normalizedPersistentData = { ...persistentData, source: 'postgres' as const };
             setDataSource('postgres');
-            setData({ ...persistentData, source: 'postgres' });
+            setData(normalizedPersistentData);
             setDataCoverage(null);
+            setMergedRecentBuckets([]);
+            setHeatmapBuckets(buildPersistentHeatmapBuckets(normalizedPersistentData));
             setLastRefreshTime(new Date().toLocaleTimeString());
             return;
           }
@@ -505,6 +700,27 @@ export function useUsageDashboard() {
   const fetchHeatmap = useCallback(async () => {
     if (!managementKey) return;
     try {
+      if (postgresAvailableRef.current !== false) {
+        try {
+          const persistentData = await usageStatsApi.fetchPersistentStats(
+            serviceUrl,
+            managementKey,
+            range,
+          );
+          if (persistentData?.summary) {
+            postgresAvailableRef.current = true;
+            setHeatmapBuckets(buildPersistentHeatmapBuckets(persistentData));
+            setMergedRecentBuckets([]);
+            return;
+          }
+        } catch {
+          if (postgresAvailableRef.current === true) {
+            setHeatmapBuckets([]);
+            return;
+          }
+        }
+      }
+
       const raw = await usageStatsApi.fetchMemoryStats();
       const canonicalBuckets = collectMemoryStatsBuckets(raw);
       setHeatmapBuckets(buildHeatmapBuckets(canonicalBuckets));
@@ -514,7 +730,7 @@ export function useUsageDashboard() {
     } catch {
       setHeatmapBuckets([]);
     }
-  }, [managementKey, range]);
+  }, [managementKey, range, serviceUrl]);
 
   useEffect(() => {
     return () => {
@@ -594,18 +810,7 @@ export function useUsageDashboard() {
       const accountRows = data.byAccount ?? [];
       return accountRows
         .filter((a) => a.key.startsWith('api-key/') && a.requests > 0)
-        .map((a) => ({
-          key: a.key,
-          label: a.label,
-          requests: a.requests,
-          successCount: a.successCount,
-          failureCount: a.failureCount,
-          totalTokens: a.totalTokens,
-          modelCount: a.childModels?.length ?? 0,
-          cost: null,
-          hasModelAttribution: (a.childModels?.length ?? 0) > 0,
-          childModels: a.childModels ?? [],
-        }))
+        .map((a) => buildApiKeyDisplayRow(a, data.byModel ?? []))
         .sort((a, b) => b.requests - a.requests);
     }
 
@@ -693,7 +898,10 @@ export function useUsageDashboard() {
       }
     }
 
-    return [];
+    return (data.byAccount ?? [])
+      .filter((a) => a.key.startsWith('api-key/') && a.requests > 0)
+      .map((a) => buildApiKeyDisplayRow(a, data.byModel ?? []))
+      .sort((a, b) => b.requests - a.requests);
   }, [data, dataSource, memoryDetailsSnapshot]);
 
   const authFileRows = useMemo<AuthFileDisplayRow[]>(() => {

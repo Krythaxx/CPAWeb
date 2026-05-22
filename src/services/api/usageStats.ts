@@ -6,6 +6,9 @@ import type {
   DashboardTimeRange,
   UsageStatsGroupRow,
   DataCoverageInfo,
+  HeatmapBucket,
+  PriceEntry,
+  TrendBucket,
 } from '@/types/usageStats';
 import type { AuthFileItem, AuthFilesResponse } from '@/types/authFile';
 import {
@@ -125,6 +128,30 @@ const TOTAL_TOKEN_KEYS = [
   'total_token_count',
   'tokens',
 ];
+const TOTAL_REQUEST_KEYS = ['totalRequests', 'total_requests', 'requestCount', 'request_count', 'requests'];
+const SUCCESS_COUNT_KEYS = ['successCount', 'success_count', ...SUCCESS_KEYS];
+const FAILURE_COUNT_KEYS = ['failureCount', 'failure_count', ...FAILURE_KEYS];
+const SUCCESS_RATE_KEYS = ['successRate', 'success_rate'];
+const CACHE_TOKEN_KEYS = ['cacheTokens', 'cache_tokens', ...CACHED_TOKEN_KEYS];
+const PERIOD_START_KEYS = ['periodStartMs', 'period_start_ms', 'periodStart', 'period_start'];
+const PERIOD_END_KEYS = ['periodEndMs', 'period_end_ms', 'periodEnd', 'period_end'];
+const COVERED_MINUTES_KEYS = ['coveredMinutes', 'covered_minutes'];
+const CHILD_MODEL_KEYS = ['childModels', 'child_models'];
+const API_KEY_IDENTITY_KEYS = [
+  'apiKeyIdentity',
+  'api_key_identity',
+  'clientApiKeyIdentity',
+  'client_api_key_identity',
+];
+const API_KEY_HASH_KEYS = [
+  'api_key_hash',
+  'apiKeyHash',
+  'client_api_key_hash',
+  'clientApiKeyHash',
+];
+const GROUP_KEY_KEYS = ['key', 'id'];
+const GROUP_LABEL_KEYS = ['label', 'name'];
+const GROUP_PROVIDER_KEYS = ['provider', 'providerKey', 'provider_key'];
 const MODEL_USAGE_IGNORED_KEYS = new Set([
   'total',
   'count',
@@ -236,7 +263,7 @@ export const usageStatsApi = {
     range: DashboardTimeRange,
   ): Promise<UsageStatsResponse> {
     const base = resolveServiceUrl(serviceUrl);
-    const response = await axios.get<UsageStatsResponse>(
+    const response = await axios.get<unknown>(
       `${base}/v0/management/usage/stats`,
       {
         params: { range },
@@ -246,7 +273,38 @@ export const usageStatsApi = {
         timeout: USAGE_SERVICE_TIMEOUT_MS,
       },
     );
-    return response.data;
+    return normalizePersistentStatsResponse(response.data, range);
+  },
+
+  async fetchPrices(
+    serviceUrl: string,
+    managementKey: string,
+  ): Promise<PriceEntry[]> {
+    const base = resolveServiceUrl(serviceUrl);
+    const response = await axios.get<PriceEntry[]>(
+      `${base}/v0/management/usage/prices`,
+      {
+        headers: { Authorization: `Bearer ${managementKey}` },
+        timeout: USAGE_SERVICE_TIMEOUT_MS,
+      },
+    );
+    return Array.isArray(response.data) ? response.data : [];
+  },
+
+  async savePrices(
+    serviceUrl: string,
+    managementKey: string,
+    prices: PriceEntry[],
+  ): Promise<void> {
+    const base = resolveServiceUrl(serviceUrl);
+    await axios.put(
+      `${base}/v0/management/usage/prices`,
+      prices,
+      {
+        headers: { Authorization: `Bearer ${managementKey}` },
+        timeout: USAGE_SERVICE_TIMEOUT_MS,
+      },
+    );
   },
 
   async probeService(serviceUrl: string): Promise<boolean> {
@@ -870,6 +928,222 @@ function readModelName(value: unknown, depth = 0): string {
   }
 
   return '';
+}
+
+function readNumberField(record: Record<string, unknown>, keys: string[]): number {
+  return normalizeUsageTotal(readKnownField(record, keys));
+}
+
+function normalizeTrendBuckets(value: unknown): TrendBucket[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const buckets = value.reduce<TrendBucket[]>((result, item) => {
+    const record = toRecord(item);
+    if (!record) return result;
+
+    const rawTimestamp =
+      readKnownField(record, ['timestamp', 'time', 'bucketTs', 'bucket_ts']) ??
+      0;
+    const timestamp =
+      typeof rawTimestamp === 'number'
+        ? rawTimestamp
+        : typeof rawTimestamp === 'string'
+          ? Number(rawTimestamp) || new Date(rawTimestamp).getTime()
+          : 0;
+    const bucketValue = readNumberField(record, ['value', 'count', 'total', 'tokens', 'requests']);
+
+    if (Number.isFinite(timestamp) && timestamp > 0) {
+      result.push({ timestamp, value: bucketValue });
+    }
+    return result;
+  }, []);
+
+  return buckets.length > 0 ? buckets : undefined;
+}
+
+function normalizeHeatmapBuckets(value: unknown): HeatmapBucket[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const buckets = value.reduce<HeatmapBucket[]>((result, item) => {
+    const record = toRecord(item);
+    if (!record) return result;
+
+    const timeStart = readNumberField(record, ['timeStart', 'time_start', 'start', 'startMs', 'start_ms']);
+    const timeEnd = readNumberField(record, ['timeEnd', 'time_end', 'end', 'endMs', 'end_ms']);
+    const success = readNumberField(record, SUCCESS_COUNT_KEYS);
+    const failed = readNumberField(record, FAILURE_COUNT_KEYS);
+    const total = success + failed;
+    const explicitRate = readNumberField(record, SUCCESS_RATE_KEYS);
+
+    if (timeStart > 0 && timeEnd > timeStart) {
+      result.push({
+        timeStart,
+        timeEnd,
+        success,
+        failed,
+        successRate: total > 0 ? (explicitRate || success / total) : 0,
+      });
+    }
+    return result;
+  }, []);
+
+  return buckets.length > 0 ? buckets : undefined;
+}
+
+function normalizePersistentGroupRows(value: unknown): UsageStatsGroupRow[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.reduce<UsageStatsGroupRow[]>((result, item) => {
+    const row = normalizePersistentGroupRow(item);
+    if (row) {
+      result.push(row);
+    }
+    return result;
+  }, []);
+}
+
+function normalizePersistentGroupRow(value: unknown): UsageStatsGroupRow | null {
+  const record = toRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const tokens = readAggregateTokenCounts(record);
+  const model = readStringField(record, MODEL_NAME_KEYS);
+  const provider = readStringField(record, GROUP_PROVIDER_KEYS);
+  const label =
+    readStringField(record, GROUP_LABEL_KEYS) ||
+    model ||
+    provider ||
+    readStringField(record, GROUP_KEY_KEYS) ||
+    'unknown';
+  const key =
+    readStringField(record, GROUP_KEY_KEYS) ||
+    (provider && model ? `${provider}/${model}` : label);
+
+  const successCount = readNumberField(record, SUCCESS_COUNT_KEYS);
+  const failureCount = readNumberField(record, FAILURE_COUNT_KEYS);
+  const explicitRequests = readNumberField(record, TOTAL_REQUEST_KEYS);
+  const requests = explicitRequests > 0 ? explicitRequests : successCount + failureCount;
+  const explicitSuccessRate = readNumberField(record, SUCCESS_RATE_KEYS);
+  const childModels = normalizePersistentGroupRows(readKnownField(record, CHILD_MODEL_KEYS));
+  const apiKeyHash = readStringField(record, API_KEY_HASH_KEYS);
+  const apiKeyIdentity = readStringField(record, API_KEY_IDENTITY_KEYS);
+  const cachedTokens = Math.max(tokens.cachedTokens, readNumberField(record, CACHE_TOKEN_KEYS));
+  const totalTokens = tokenCountTotal({ ...tokens, cachedTokens });
+
+  return {
+    key,
+    label,
+    requests,
+    successCount,
+    failureCount,
+    successRate: requests > 0 ? (explicitSuccessRate || successCount / requests) : 0,
+    inputTokens: tokens.inputTokens,
+    outputTokens: tokens.outputTokens,
+    reasoningTokens: tokens.reasoningTokens,
+    cachedTokens,
+    cacheTokens: cachedTokens,
+    totalTokens,
+    ...(model ? { model } : {}),
+    ...(provider ? { provider } : {}),
+    ...(apiKeyHash ? { apiKeyHash } : {}),
+    ...(apiKeyIdentity ? { apiKeyIdentity } : {}),
+    ...(childModels.length > 0 ? { childModels } : {}),
+  };
+}
+
+function normalizePersistentStatsResponse(
+  raw: unknown,
+  fallbackRange: DashboardTimeRange,
+): UsageStatsResponse {
+  const record = toRecord(raw);
+  if (!record) {
+    throw new Error('Invalid usage stats response');
+  }
+
+  const summaryRecord = toRecord(record.summary) ?? {};
+  const byModel = normalizePersistentGroupRows(
+    readKnownField(record, ['byModel', 'by_model', 'models', 'modelUsage', 'model_usage'])
+  );
+  const byProvider = normalizePersistentGroupRows(
+    readKnownField(record, ['byProvider', 'by_provider', 'providers', 'providerUsage', 'provider_usage'])
+  );
+  const byAccount = normalizePersistentGroupRows(
+    readKnownField(record, ['byAccount', 'by_account', 'accounts', 'apiKeys', 'api_keys'])
+  );
+
+  const summaryTokens = readAggregateTokenCounts(summaryRecord);
+  const rowTokenTotal = byProvider.reduce((sum, row) => sum + row.totalTokens, 0);
+  const totalRequests =
+    readNumberField(summaryRecord, TOTAL_REQUEST_KEYS) ||
+    byProvider.reduce((sum, row) => sum + row.requests, 0) ||
+    byAccount.reduce((sum, row) => sum + row.requests, 0);
+  const successCount =
+    readNumberField(summaryRecord, SUCCESS_COUNT_KEYS) ||
+    byProvider.reduce((sum, row) => sum + row.successCount, 0);
+  const failureCount =
+    readNumberField(summaryRecord, FAILURE_COUNT_KEYS) ||
+    byProvider.reduce((sum, row) => sum + row.failureCount, 0);
+  const cachedTokens = Math.max(
+    summaryTokens.cachedTokens,
+    readNumberField(summaryRecord, CACHE_TOKEN_KEYS)
+  );
+
+  const summary: UsageStatsSummary = {
+    totalRequests,
+    successCount,
+    failureCount,
+    successRate: totalRequests > 0 ? successCount / totalRequests : 0,
+    inputTokens: summaryTokens.inputTokens,
+    outputTokens: summaryTokens.outputTokens,
+    reasoningTokens: summaryTokens.reasoningTokens,
+    cachedTokens,
+    cacheTokens: cachedTokens,
+    totalTokens: tokenCountTotal({ ...summaryTokens, cachedTokens }) || rowTokenTotal,
+  };
+
+  const periodStartMs = readNumberField(summaryRecord, PERIOD_START_KEYS);
+  const periodEndMs = readNumberField(summaryRecord, PERIOD_END_KEYS);
+  const coveredMinutes = readNumberField(summaryRecord, COVERED_MINUTES_KEYS);
+  const requestTrend = normalizeTrendBuckets(readKnownField(summaryRecord, ['requestTrend', 'request_trend']));
+  const tokenTrend = normalizeTrendBuckets(readKnownField(summaryRecord, ['tokenTrend', 'token_trend']));
+  const inputOutputTrend = normalizeTrendBuckets(
+    readKnownField(summaryRecord, ['inputOutputTrend', 'input_output_trend'])
+  );
+  const cacheTrend = normalizeTrendBuckets(readKnownField(summaryRecord, ['cacheTrend', 'cache_trend']));
+
+  if (periodStartMs > 0) summary.periodStartMs = periodStartMs;
+  if (periodEndMs > 0) summary.periodEndMs = periodEndMs;
+  if (coveredMinutes > 0) summary.coveredMinutes = coveredMinutes;
+  if (requestTrend) summary.requestTrend = requestTrend;
+  if (tokenTrend) summary.tokenTrend = tokenTrend;
+  if (inputOutputTrend) summary.inputOutputTrend = inputOutputTrend;
+  if (cacheTrend) summary.cacheTrend = cacheTrend;
+
+  const heatmap = normalizeHeatmapBuckets(
+    readKnownField(record, ['heatmap', 'requestHeatmap', 'request_heatmap'])
+  );
+
+  return {
+    source: 'postgres',
+    range:
+      typeof record.range === 'string'
+        ? (record.range as UsageStatsResponse['range'])
+        : fallbackRange,
+    summary,
+    byModel,
+    byProvider,
+    byAccount,
+    ...(heatmap ? { heatmap } : {}),
+    ...(isRecord(record.service) ? { service: record.service as unknown as UsageStatsResponse['service'] } : {}),
+  };
 }
 
 function addModelRow(
@@ -1509,15 +1783,6 @@ export function normalizeMemoryStats(
   };
 }
 
-const API_KEY_HASH_KEYS = [
-  'api_key_hash',
-  'apiKeyHash',
-  'client_api_key_hash',
-  'clientApiKeyHash',
-];
-const PERIOD_START_KEYS = ['periodStartMs', 'period_start_ms', 'periodStart'];
-const PERIOD_END_KEYS = ['periodEndMs', 'period_end_ms', 'periodEnd'];
-const COVERED_MINUTES_KEYS = ['coveredMinutes', 'covered_minutes'];
 const LEGACY_ARRAY_KEYS = ['details', 'events', 'records', 'items'];
 
 export function isCanonicalResponse(value: unknown): boolean {

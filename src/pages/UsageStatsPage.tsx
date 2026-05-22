@@ -23,7 +23,10 @@ function formatNumber(n: number): string {
 export function UsageStatsPage() {
   const { t } = useTranslation();
   const dashboard = useUsageDashboard();
-  const { table: priceTable, updateEntry, removeEntry, clearAll } = usePriceTable();
+  const { table: priceTable, updateEntry, removeEntry, clearAll } = usePriceTable({
+    serviceUrl: dashboard.serviceUrl,
+    preferBackend: dashboard.dataSource === 'postgres' && Boolean(dashboard.data),
+  });
   const [autoRefreshInterval, setAutoRefreshInterval] = useState(30);
   const [priceModalOpen, setPriceModalOpen] = useState(false);
 

@@ -1,4 +1,4 @@
-import { useState, useMemo, Fragment } from 'react';
+import { Fragment, useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { SourceDisplayRow, PriceEntry } from '@/types/usageStats';
 import { calculateCost, findPriceEntry, formatCost } from '../utils/priceCalculator';
@@ -33,7 +33,7 @@ export function SourceTable({ rows, priceTable }: SourceTableProps) {
     }
   };
 
-  const computeRowCost = (row: SourceDisplayRow): number | null => {
+  const computeRowCost = useCallback((row: SourceDisplayRow): number | null => {
     if (!row.childModels || row.childModels.length === 0) return null;
     let total = 0;
     let hasPrice = false;
@@ -45,7 +45,7 @@ export function SourceTable({ rows, priceTable }: SourceTableProps) {
       }
     }
     return hasPrice ? total : null;
-  };
+  }, [priceTable]);
 
   const sortedRows = useMemo(() => {
     const dir = sortDir === 'asc' ? 1 : -1;
@@ -68,7 +68,7 @@ export function SourceTable({ rows, priceTable }: SourceTableProps) {
           return 0;
       }
     });
-  }, [rows, sortKey, sortDir, priceTable]);
+  }, [rows, sortKey, sortDir, computeRowCost]);
 
   const arrow = (key: SortKey) =>
     sortKey === key ? (sortDir === 'asc' ? ' \u25B2' : ' \u25BC') : '';

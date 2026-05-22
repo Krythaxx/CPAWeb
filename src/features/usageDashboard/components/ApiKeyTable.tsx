@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ApiKeyDisplayRow, PriceEntry } from '@/types/usageStats';
 import { calculateCost, findPriceEntry, formatCost } from '../utils/priceCalculator';
@@ -33,7 +33,7 @@ export function ApiKeyTable({ rows, priceTable }: ApiKeyTableProps) {
     }
   };
 
-  const computeRowCost = (row: ApiKeyDisplayRow): number | null => {
+  const computeRowCost = useCallback((row: ApiKeyDisplayRow): number | null => {
     if (!row.hasModelAttribution) return null;
     let total = 0;
     let hasPrice = false;
@@ -45,7 +45,7 @@ export function ApiKeyTable({ rows, priceTable }: ApiKeyTableProps) {
       }
     }
     return hasPrice ? total : null;
-  };
+  }, [priceTable]);
 
   const sortedRows = useMemo(() => {
     const dir = sortDir === 'asc' ? 1 : -1;
@@ -66,7 +66,7 @@ export function ApiKeyTable({ rows, priceTable }: ApiKeyTableProps) {
           return 0;
       }
     });
-  }, [rows, sortKey, sortDir, priceTable]);
+  }, [rows, sortKey, sortDir, computeRowCost]);
 
   const arrow = (key: SortKey) =>
     sortKey === key ? (sortDir === 'asc' ? ' \u25B2' : ' \u25BC') : '';
