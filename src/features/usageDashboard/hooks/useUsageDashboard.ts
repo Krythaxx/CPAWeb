@@ -386,8 +386,7 @@ export function useUsageDashboard() {
           );
           if (ac.signal.aborted) return;
           if (
-            persistentData?.summary &&
-            persistentData.summary.totalRequests > 0
+            persistentData?.summary
           ) {
             postgresAvailableRef.current = true;
             setDataSource('postgres');
