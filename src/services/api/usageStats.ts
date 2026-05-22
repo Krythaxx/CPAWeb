@@ -1154,6 +1154,9 @@ function normalizePersistentStatsResponse(
   const byProvider = normalizePersistentGroupRows(
     readKnownField(record, ['byProvider', 'by_provider', 'providers'])
   );
+  const byAccount = normalizePersistentGroupRows(
+    readKnownField(record, ['byAccount', 'by_account', 'accounts'])
+  );
   const heatmap = normalizeHeatmapBuckets(readKnownField(record, ['heatmap', 'buckets'])) ?? [];
 
   const summaryTokens = readAggregateTokenCounts(summaryRecord);
@@ -1230,6 +1233,7 @@ function normalizePersistentStatsResponse(
     byApiKey,
     byModel,
     ...(byProvider.length > 0 ? { byProvider } : {}),
+    ...(byAccount.length > 0 ? { byAccount } : {}),
     ...(heatmap.length > 0 ? { heatmap } : {}),
     ...(isRecord(record.service) ? { service: record.service as unknown as UsageStatsResponse['service'] } : {}),
   };
