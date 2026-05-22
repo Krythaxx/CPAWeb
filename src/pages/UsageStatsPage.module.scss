@@ -46,6 +46,10 @@
   grid-template-columns: 1fr 1fr;
   gap: 12px;
 
+  > * {
+    min-width: 0;
+  }
+
   @media (max-width: $breakpoint-tablet) {
     grid-template-columns: 1fr;
   }
