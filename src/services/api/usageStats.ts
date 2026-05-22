@@ -7,6 +7,11 @@ import type {
   UsageStatsGroupRow,
   DataCoverageInfo,
   HeatmapBucket,
+  HeatmapResponse,
+  ProviderRow,
+  ProvidersResponse,
+  AccountRow,
+  AccountsResponse,
   PriceEntry,
   TrendBucket,
 } from '@/types/usageStats';
@@ -184,7 +189,7 @@ export interface NormalizedAuthFileRow {
   key: string;
   label: string;
   provider: string;
-  authIndex: number | undefined;
+  authIndex: string | undefined;
   requests: number;
   successCount: number;
   failureCount: number;
@@ -235,6 +240,8 @@ export interface TokenCounts {
   outputTokens: number;
   reasoningTokens: number;
   cachedTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
   totalTokens: number;
 }
 
@@ -363,6 +370,55 @@ export const usageStatsApi = {
       }
       return result;
     }, []);
+  },
+
+  async fetchRequestHeatmap(
+    serviceUrl: string,
+    managementKey: string,
+    range: DashboardTimeRange,
+  ): Promise<HeatmapResponse> {
+    const base = resolveServiceUrl(serviceUrl);
+    const response = await axios.get<unknown>(
+      `${base}/v0/management/usage/request-heatmap`,
+      {
+        params: { range },
+        headers: { Authorization: `Bearer ${managementKey}` },
+        timeout: USAGE_SERVICE_TIMEOUT_MS,
+      },
+    );
+    return normalizeHeatmapResponse(response.data, range);
+  },
+
+  async fetchProviders(
+    serviceUrl: string,
+    managementKey: string,
+    range: DashboardTimeRange,
+  ): Promise<ProvidersResponse> {
+    const base = resolveServiceUrl(serviceUrl);
+    const response = await axios.get<unknown>(
+      `${base}/v0/management/usage/providers`,
+      {
+        params: { range },
+        headers: { Authorization: `Bearer ${managementKey}` },
+        timeout: USAGE_SERVICE_TIMEOUT_MS,
+      },
+    );
+    return normalizeProvidersResponse(response.data, range);
+  },
+
+  async fetchAccounts(
+    serviceUrl: string,
+    managementKey: string,
+  ): Promise<AccountsResponse> {
+    const base = resolveServiceUrl(serviceUrl);
+    const response = await axios.get<unknown>(
+      `${base}/v0/management/usage/accounts`,
+      {
+        headers: { Authorization: `Bearer ${managementKey}` },
+        timeout: USAGE_SERVICE_TIMEOUT_MS,
+      },
+    );
+    return normalizeAccountsResponse(response.data);
   },
 
   async fetchMemoryRequestLogDetails(maxRequestLogs = 50): Promise<MemoryRequestLogDetail[]> {
@@ -562,6 +618,8 @@ function readTokenCountsFromLog(text: string): TokenCounts {
     outputTokens,
     reasoningTokens,
     cachedTokens,
+    cacheReadTokens: 0,
+    cacheCreationTokens: 0,
     totalTokens,
   };
 }
@@ -669,7 +727,7 @@ function createEmptyGroupRow(input: {
   key: string;
   label: string;
   provider?: string;
-  authIndex?: number;
+  authIndex?: string;
   apiKeyHash?: string;
   model?: string;
 }): UsageStatsGroupRow {
@@ -684,7 +742,8 @@ function createEmptyGroupRow(input: {
     outputTokens: 0,
     reasoningTokens: 0,
     cachedTokens: 0,
-    cacheTokens: 0,
+    cacheReadTokens: 0,
+    cacheCreationTokens: 0,
     totalTokens: 0,
     provider: input.provider,
     authIndex: input.authIndex,
@@ -706,6 +765,8 @@ function emptyTokenCounts(): TokenCounts {
     outputTokens: 0,
     reasoningTokens: 0,
     cachedTokens: 0,
+    cacheReadTokens: 0,
+    cacheCreationTokens: 0,
     totalTokens: 0,
   };
 }
@@ -735,6 +796,8 @@ function addTokenCountValues(left: TokenCounts, right: TokenCounts): TokenCounts
     outputTokens: left.outputTokens + right.outputTokens,
     reasoningTokens: left.reasoningTokens + right.reasoningTokens,
     cachedTokens: left.cachedTokens + right.cachedTokens,
+    cacheReadTokens: left.cacheReadTokens + right.cacheReadTokens,
+    cacheCreationTokens: left.cacheCreationTokens + right.cacheCreationTokens,
     totalTokens: left.totalTokens + right.totalTokens,
   };
 }
@@ -761,6 +824,8 @@ function readDirectTokenCounts(record: Record<string, unknown>): TokenCounts {
     outputTokens,
     reasoningTokens,
     cachedTokens,
+    cacheReadTokens: 0,
+    cacheCreationTokens: 0,
     totalTokens,
   };
 }
@@ -876,7 +941,8 @@ function applyTokenCounts(row: UsageStatsGroupRow, tokens: TokenCounts) {
   row.outputTokens += tokens.outputTokens;
   row.reasoningTokens += tokens.reasoningTokens;
   row.cachedTokens += tokens.cachedTokens;
-  row.cacheTokens += tokens.cachedTokens;
+  row.cacheReadTokens = (row.cacheReadTokens ?? 0) + (tokens.cacheReadTokens ?? 0);
+  row.cacheCreationTokens = (row.cacheCreationTokens ?? 0) + (tokens.cacheCreationTokens ?? 0);
   row.totalTokens += tokenCountTotal(tokens);
 }
 
@@ -1036,6 +1102,14 @@ function normalizePersistentGroupRow(value: unknown): UsageStatsGroupRow | null 
   const apiKeyHash = readStringField(record, API_KEY_HASH_KEYS);
   const apiKeyIdentity = readStringField(record, API_KEY_IDENTITY_KEYS);
   const cachedTokens = Math.max(tokens.cachedTokens, readNumberField(record, CACHE_TOKEN_KEYS));
+  const cacheReadTokens = Math.max(
+    readNumberField(record, ['cacheReadTokens', 'cache_read_tokens']),
+    0
+  );
+  const cacheCreationTokens = Math.max(
+    readNumberField(record, ['cacheCreationTokens', 'cache_creation_tokens']),
+    0
+  );
   const totalTokens = tokenCountTotal({ ...tokens, cachedTokens });
 
   return {
@@ -1049,12 +1123,14 @@ function normalizePersistentGroupRow(value: unknown): UsageStatsGroupRow | null 
     outputTokens: tokens.outputTokens,
     reasoningTokens: tokens.reasoningTokens,
     cachedTokens,
-    cacheTokens: cachedTokens,
+    cacheReadTokens,
+    cacheCreationTokens,
     totalTokens,
     ...(model ? { model } : {}),
     ...(provider ? { provider } : {}),
     ...(apiKeyHash ? { apiKeyHash } : {}),
     ...(apiKeyIdentity ? { apiKeyIdentity } : {}),
+    ...(readStringField(record, AUTH_INDEX_KEYS) ? { authIndex: readStringField(record, AUTH_INDEX_KEYS) } : {}),
     ...(childModels.length > 0 ? { childModels } : {}),
   };
 }
@@ -1069,32 +1145,39 @@ function normalizePersistentStatsResponse(
   }
 
   const summaryRecord = toRecord(record.summary) ?? {};
+  const byApiKey = normalizePersistentGroupRows(
+    readKnownField(record, ['byApiKey', 'by_api_key', 'apiKeys', 'api_keys'])
+  );
   const byModel = normalizePersistentGroupRows(
     readKnownField(record, ['byModel', 'by_model', 'models', 'modelUsage', 'model_usage'])
   );
-  const byProvider = normalizePersistentGroupRows(
-    readKnownField(record, ['byProvider', 'by_provider', 'providers', 'providerUsage', 'provider_usage'])
-  );
-  const byAccount = normalizePersistentGroupRows(
-    readKnownField(record, ['byAccount', 'by_account', 'accounts', 'apiKeys', 'api_keys'])
-  );
 
   const summaryTokens = readAggregateTokenCounts(summaryRecord);
-  const rowTokenTotal = byProvider.reduce((sum, row) => sum + row.totalTokens, 0);
+  const rowTokenTotal = byApiKey.reduce((sum, row) => sum + row.totalTokens, 0);
   const totalRequests =
     readNumberField(summaryRecord, TOTAL_REQUEST_KEYS) ||
-    byProvider.reduce((sum, row) => sum + row.requests, 0) ||
-    byAccount.reduce((sum, row) => sum + row.requests, 0);
+    byApiKey.reduce((sum, row) => sum + row.requests, 0);
   const successCount =
     readNumberField(summaryRecord, SUCCESS_COUNT_KEYS) ||
-    byProvider.reduce((sum, row) => sum + row.successCount, 0);
+    byApiKey.reduce((sum, row) => sum + row.successCount, 0);
   const failureCount =
     readNumberField(summaryRecord, FAILURE_COUNT_KEYS) ||
-    byProvider.reduce((sum, row) => sum + row.failureCount, 0);
+    byApiKey.reduce((sum, row) => sum + row.failureCount, 0);
   const cachedTokens = Math.max(
     summaryTokens.cachedTokens,
     readNumberField(summaryRecord, CACHE_TOKEN_KEYS)
   );
+  const cacheReadTokens = Math.max(
+    readNumberField(summaryRecord, ['cacheReadTokens', 'cache_read_tokens']),
+    0
+  );
+  const cacheCreationTokens = Math.max(
+    readNumberField(summaryRecord, ['cacheCreationTokens', 'cache_creation_tokens']),
+    0
+  );
+  const rpm = readNumberField(summaryRecord, ['rpm', 'RPM']);
+  const tpm = readNumberField(summaryRecord, ['tpm', 'TPM']);
+  const coveredMinutes = readNumberField(summaryRecord, COVERED_MINUTES_KEYS);
 
   const summary: UsageStatsSummary = {
     totalRequests,
@@ -1105,13 +1188,15 @@ function normalizePersistentStatsResponse(
     outputTokens: summaryTokens.outputTokens,
     reasoningTokens: summaryTokens.reasoningTokens,
     cachedTokens,
-    cacheTokens: cachedTokens,
+    cacheReadTokens,
+    cacheCreationTokens,
     totalTokens: tokenCountTotal({ ...summaryTokens, cachedTokens }) || rowTokenTotal,
+    rpm,
+    tpm,
   };
 
   const periodStartMs = readNumberField(summaryRecord, PERIOD_START_KEYS);
   const periodEndMs = readNumberField(summaryRecord, PERIOD_END_KEYS);
-  const coveredMinutes = readNumberField(summaryRecord, COVERED_MINUTES_KEYS);
   const requestTrend = normalizeTrendBuckets(readKnownField(summaryRecord, ['requestTrend', 'request_trend']));
   const tokenTrend = normalizeTrendBuckets(readKnownField(summaryRecord, ['tokenTrend', 'token_trend']));
   const inputTrend = normalizeTrendBuckets(readKnownField(summaryRecord, ['inputTrend', 'input_trend']));
@@ -1131,10 +1216,6 @@ function normalizePersistentStatsResponse(
   if (inputOutputTrend) summary.inputOutputTrend = inputOutputTrend;
   if (cacheTrend) summary.cacheTrend = cacheTrend;
 
-  const heatmap = normalizeHeatmapBuckets(
-    readKnownField(record, ['heatmap', 'requestHeatmap', 'request_heatmap'])
-  );
-
   return {
     source: 'postgres',
     range:
@@ -1142,10 +1223,8 @@ function normalizePersistentStatsResponse(
         ? (record.range as UsageStatsResponse['range'])
         : fallbackRange,
     summary,
+    byApiKey,
     byModel,
-    byProvider,
-    byAccount,
-    ...(heatmap ? { heatmap } : {}),
     ...(isRecord(record.service) ? { service: record.service as unknown as UsageStatsResponse['service'] } : {}),
   };
 }
@@ -1660,7 +1739,7 @@ export function normalizeMemoryStats(
       key,
       label,
       provider: providerKey,
-      authIndex: authIndexKey && Number.isFinite(Number(authIndexKey)) ? Number(authIndexKey) : undefined,
+      authIndex: authIndexKey || undefined,
       requests: success + failure,
       successCount: success,
       failureCount: failure,
@@ -1700,6 +1779,8 @@ export function normalizeMemoryStats(
         outputTokens: row.outputTokens,
         reasoningTokens: row.reasoningTokens,
         cachedTokens: row.cachedTokens,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
         totalTokens: row.totalTokens,
       }),
     emptyTokenCounts(),
@@ -1711,6 +1792,8 @@ export function normalizeMemoryStats(
         outputTokens: row.outputTokens,
         reasoningTokens: row.reasoningTokens,
         cachedTokens: row.cachedTokens,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
         totalTokens: row.totalTokens,
       }),
     emptyTokenCounts(),
@@ -1729,7 +1812,8 @@ export function normalizeMemoryStats(
       outputTokens: row.outputTokens,
       reasoningTokens: row.reasoningTokens,
       cachedTokens: row.cachedTokens,
-      cacheTokens: row.cachedTokens,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
       totalTokens: row.totalTokens,
       apiKeyHash: row.identity,
       childModels: row.childModels.length > 0 ? row.childModels : undefined,
@@ -1745,7 +1829,8 @@ export function normalizeMemoryStats(
       outputTokens: row.outputTokens,
       reasoningTokens: row.reasoningTokens,
       cachedTokens: row.cachedTokens,
-      cacheTokens: row.cachedTokens,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
       totalTokens: row.totalTokens,
       provider: row.provider,
       authIndex: row.authIndex,
@@ -1766,8 +1851,11 @@ export function normalizeMemoryStats(
       outputTokens: summaryTokens.outputTokens,
       reasoningTokens: summaryTokens.reasoningTokens,
       cachedTokens: summaryTokens.cachedTokens,
-      cacheTokens: summaryTokens.cachedTokens,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
       totalTokens: tokenCountTotal(summaryTokens),
+      rpm: 0,
+      tpm: 0,
     };
 
   if (periodStartMs != null) {
@@ -1781,6 +1869,22 @@ export function normalizeMemoryStats(
     source: 'memory' as const,
     range: effectiveRange,
     summary,
+    byApiKey: Array.from(apiKeyRowMap.values()).map((row) => ({
+      key: `api-key/${row.identity}`,
+      label: row.label,
+      requests: row.requests,
+      successCount: row.successCount,
+      failureCount: row.failureCount,
+      successRate: row.requests > 0 ? row.successCount / row.requests : 0,
+      inputTokens: row.inputTokens,
+      outputTokens: row.outputTokens,
+      reasoningTokens: row.reasoningTokens,
+      cachedTokens: row.cachedTokens,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      totalTokens: row.totalTokens,
+      childModels: row.childModels.length > 0 ? row.childModels : undefined,
+    })),
     byModel,
     byProvider,
     byAccount,
@@ -1935,16 +2039,16 @@ export function augmentMemoryStatsWithRequestLogs(
   const shouldFillTokens = data.summary.totalTokens === 0;
   const shouldAddModels = data.byModel.length === 0;
   const providerMap = new Map(
-    data.byProvider.map((row) => [row.key, { ...row }] as const)
+    (data.byProvider ?? []).map((row) => [row.key, { ...row }] as const)
   );
   const modelMap = new Map(
     data.byModel.map((row) => [row.key, { ...row }] as const)
   );
 
-  const authFileAccounts = data.byAccount.filter(
+  const authFileAccounts = (data.byAccount ?? []).filter(
     (a) => a.key.startsWith('auth-file/') && a.requests > 0
   );
-  const apiKeyAccounts = data.byAccount.filter(
+  const apiKeyAccounts = (data.byAccount ?? []).filter(
     (a) => a.key.startsWith('api-key/') && a.requests > 0
   );
   const singleAuthFile =
@@ -1958,7 +2062,7 @@ export function augmentMemoryStatsWithRequestLogs(
       ? mutableApiKeyAccounts[0]
       : null;
 
-  const byAccount = data.byAccount.map((a) => {
+  const byAccount = (data.byAccount ?? []).map((a) => {
     if (singleAuthFile && a.key === singleAuthFile.key) return singleAuthFile;
     const mutableApi = mutableApiKeyAccounts.find((m) => m.key === a.key);
     if (mutableApi) return mutableApi;
@@ -1979,8 +2083,8 @@ export function augmentMemoryStatsWithRequestLogs(
   }
 
   const providerFallback =
-    data.byProvider.filter((row) => row.requests > 0).length === 1
-      ? data.byProvider.find((row) => row.requests > 0)?.key
+    (data.byProvider ?? []).filter((row) => row.requests > 0).length === 1
+      ? (data.byProvider ?? []).find((row) => row.requests > 0)?.key
       : undefined;
 
   details.forEach((detail) => {
@@ -2089,6 +2193,8 @@ export function augmentMemoryStatsWithRequestLogs(
         outputTokens: row.outputTokens,
         reasoningTokens: row.reasoningTokens,
         cachedTokens: row.cachedTokens,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
         totalTokens: row.totalTokens,
       }),
     emptyTokenCounts()
@@ -2099,6 +2205,8 @@ export function augmentMemoryStatsWithRequestLogs(
         outputTokens: singleAuthFile.outputTokens,
         reasoningTokens: singleAuthFile.reasoningTokens,
         cachedTokens: singleAuthFile.cachedTokens,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
         totalTokens: singleAuthFile.totalTokens,
       }
     : emptyTokenCounts();
@@ -2115,7 +2223,6 @@ export function augmentMemoryStatsWithRequestLogs(
         ? summaryTokens.reasoningTokens
         : data.summary.reasoningTokens,
       cachedTokens: shouldFillTokens ? summaryTokens.cachedTokens : data.summary.cachedTokens,
-      cacheTokens: shouldFillTokens ? summaryTokens.cachedTokens : data.summary.cacheTokens,
       totalTokens: shouldFillTokens ? tokenCountTotal(summaryTokens) : data.summary.totalTokens,
     },
     byProvider,
@@ -2144,4 +2251,67 @@ export function deriveCoveredMinutesFromBuckets(
   }
 
   return buckets.length * RECENT_REQUEST_BUCKET_DURATION_MINUTES;
+}
+
+function normalizeHeatmapResponse(raw: unknown, fallbackRange: DashboardTimeRange): HeatmapResponse {
+  const record = toRecord(raw);
+  if (!record) {
+    return { range: fallbackRange, buckets: [] };
+  }
+  const range = typeof record.range === 'string' ? record.range : fallbackRange;
+  const buckets = normalizeHeatmapBuckets(readKnownField(record, ['buckets'])) ?? [];
+  return { range, buckets };
+}
+
+function normalizeProvidersResponse(raw: unknown, fallbackRange: DashboardTimeRange): ProvidersResponse {
+  const record = toRecord(raw);
+  if (!record) {
+    return { range: fallbackRange, providers: [] };
+  }
+  const range = typeof record.range === 'string' ? record.range : fallbackRange;
+  const providers = (normalizePersistentGroupRows(readKnownField(record, ['providers'])) ?? []) as ProviderRow[];
+  return { range, providers };
+}
+
+function normalizeAccountsResponse(raw: unknown): AccountsResponse {
+  const record = toRecord(raw);
+  if (!record) {
+    return { snapshotTime: 0, accounts: [] };
+  }
+  const snapshotTime = readNumberField(record, ['snapshotTime', 'snapshot_time']);
+  const rawAccounts = record.accounts;
+  const accounts: AccountRow[] = [];
+  if (Array.isArray(rawAccounts)) {
+    for (const item of rawAccounts) {
+      const r = toRecord(item);
+      if (!r) continue;
+      let recentRequests: unknown[] = [];
+      const rrRaw = r.recentRequests ?? r.recent_requests;
+      if (typeof rrRaw === 'string' && rrRaw.trim()) {
+        try {
+          recentRequests = JSON.parse(rrRaw);
+        } catch { /* ignore */ }
+      } else if (Array.isArray(rrRaw)) {
+        recentRequests = rrRaw;
+      }
+      accounts.push({
+        key: readStringField(r, GROUP_KEY_KEYS) || 'unknown',
+        source: readStringField(r, ['source']) || '',
+        provider: readStringField(r, GROUP_PROVIDER_KEYS) || '',
+        type: readStringField(r, ['type']) || '',
+        name: readStringField(r, ['name']) || '',
+        label: readStringField(r, GROUP_LABEL_KEYS) || readStringField(r, ['name']) || 'unknown',
+        authIndex: readStringField(r, ['authIndex', 'auth_index', 'auth-index']) || undefined,
+        status: readStringField(r, ['status']) || '',
+        statusMessage: readStringField(r, ['statusMessage', 'status_message']) || '',
+        disabled: !!r.disabled,
+        unavailable: !!r.unavailable,
+        runtimeOnly: !!r.runtimeOnly || !!r.runtime_only,
+        success: readNumberField(r, SUCCESS_COUNT_KEYS),
+        failed: readNumberField(r, FAILURE_COUNT_KEYS),
+        recentRequests,
+      });
+    }
+  }
+  return { snapshotTime, accounts };
 }

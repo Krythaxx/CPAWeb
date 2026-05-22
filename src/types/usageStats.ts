@@ -11,8 +11,11 @@ export interface UsageStatsSummary {
   outputTokens: number;
   reasoningTokens: number;
   cachedTokens: number;
-  cacheTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
   totalTokens: number;
+  rpm: number;
+  tpm: number;
   periodStartMs?: number;
   periodEndMs?: number;
   coveredMinutes?: number;
@@ -35,11 +38,12 @@ export interface UsageStatsGroupRow {
   outputTokens: number;
   reasoningTokens: number;
   cachedTokens: number;
-  cacheTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
   totalTokens: number;
   model?: string;
   provider?: string;
-  authIndex?: number;
+  authIndex?: string;
   apiKeyHash?: string;
   apiKeyIdentity?: string;
   childModels?: UsageStatsGroupRow[];
@@ -57,9 +61,10 @@ export interface UsageStatsResponse {
   source: 'postgres' | 'memory';
   range: UsageStatsTimeRange | DashboardTimeRange;
   summary: UsageStatsSummary;
+  byApiKey: UsageStatsGroupRow[];
   byModel: UsageStatsGroupRow[];
-  byProvider: UsageStatsGroupRow[];
-  byAccount: UsageStatsGroupRow[];
+  byProvider?: UsageStatsGroupRow[];
+  byAccount?: UsageStatsGroupRow[];
   heatmap?: HeatmapBucket[];
   service?: UsageStatsServiceInfo;
 }
@@ -96,6 +101,55 @@ export interface HeatmapBucket {
   success: number;
   failed: number;
   successRate: number;
+}
+
+export interface HeatmapResponse {
+  range: string;
+  buckets: HeatmapBucket[];
+}
+
+export interface ProviderRow {
+  key: string;
+  label: string;
+  requests: number;
+  successCount: number;
+  failureCount: number;
+  successRate: number;
+  totalTokens: number;
+  inputTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+  cachedTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+}
+
+export interface ProvidersResponse {
+  range: string;
+  providers: ProviderRow[];
+}
+
+export interface AccountRow {
+  key: string;
+  source: string;
+  provider: string;
+  type: string;
+  name: string;
+  label: string;
+  authIndex?: string;
+  status: string;
+  statusMessage: string;
+  disabled: boolean;
+  unavailable: boolean;
+  runtimeOnly: boolean;
+  success: number;
+  failed: number;
+  recentRequests: unknown[];
+}
+
+export interface AccountsResponse {
+  snapshotTime: number;
+  accounts: AccountRow[];
 }
 
 export interface PriceEntry {

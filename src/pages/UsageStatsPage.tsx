@@ -70,9 +70,11 @@ export function UsageStatsPage() {
   const totalCostBadge = (() => {
     if (!s || !showTokenColumns || s.totalTokens <= 0) return undefined;
     const byModel = dashboard.data?.byModel ?? [];
+    const byApiKey = dashboard.data?.byApiKey ?? [];
+    const modelRows = byModel.length > 0 ? byModel : byApiKey.flatMap((k) => k.childModels ?? []);
     let total = 0;
     let hasPrice = false;
-    for (const row of byModel) {
+    for (const row of modelRows) {
       if (row.requests <= 0) continue;
       const model = row.model ?? row.key;
       const priceEntry = priceTable.find((e) => e.model === model);

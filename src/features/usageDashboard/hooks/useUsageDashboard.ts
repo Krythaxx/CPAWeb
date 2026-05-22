@@ -29,6 +29,8 @@ import type {
   DataCoverageInfo,
   UsageStatsSummary,
   UsageStatsGroupRow,
+  AccountRow,
+  ProviderRow,
 } from '@/types/usageStats';
 import {
   normalizeRecentRequestBuckets,
@@ -360,7 +362,6 @@ function mergeApiKeyModelRows(
             outputTokens: model.outputTokens,
             reasoningTokens: model.reasoningTokens,
             cachedTokens: model.cachedTokens,
-            cacheTokens: model.cacheTokens,
             totalTokens: model.totalTokens,
           }
         : {}),
@@ -560,6 +561,8 @@ export function useUsageDashboard() {
   );
 
   const [dataCoverage, setDataCoverage] = useState<DataCoverageInfo | null>(null);
+  const [postgresProviders, setPostgresProviders] = useState<ProviderRow[]>([]);
+  const [postgresAccounts, setPostgresAccounts] = useState<AccountRow[]>([]);
 
   const resetPostgresDetection = useCallback(() => {
     postgresAvailableRef.current = null;
@@ -591,22 +594,23 @@ export function useUsageDashboard() {
     try {
       if (postgresAvailableRef.current !== false) {
         try {
-          const persistentData = await usageStatsApi.fetchPersistentStats(
-            serviceUrl,
-            managementKey,
-            range,
-          );
+          const [persistentData, heatmapData, providersData, accountsData] = await Promise.all([
+            usageStatsApi.fetchPersistentStats(serviceUrl, managementKey, range),
+            usageStatsApi.fetchRequestHeatmap(serviceUrl, managementKey, range),
+            usageStatsApi.fetchProviders(serviceUrl, managementKey, range),
+            usageStatsApi.fetchAccounts(serviceUrl, managementKey),
+          ]);
           if (ac.signal.aborted) return;
-          if (
-            persistentData?.summary
-          ) {
+          if (persistentData?.summary) {
             postgresAvailableRef.current = true;
             const normalizedPersistentData = { ...persistentData, source: 'postgres' as const };
             setDataSource('postgres');
             setData(normalizedPersistentData);
             setDataCoverage(null);
             setMergedRecentBuckets([]);
-            setHeatmapBuckets(buildPersistentHeatmapBuckets(normalizedPersistentData));
+            setPostgresProviders(providersData?.providers ?? []);
+            setPostgresAccounts(accountsData?.accounts ?? []);
+            setHeatmapBuckets(heatmapData?.buckets ?? buildPersistentHeatmapBuckets(normalizedPersistentData));
             setLastRefreshTime(new Date().toLocaleTimeString());
             return;
           }
@@ -722,14 +726,10 @@ export function useUsageDashboard() {
     try {
       if (postgresAvailableRef.current !== false) {
         try {
-          const persistentData = await usageStatsApi.fetchPersistentStats(
-            serviceUrl,
-            managementKey,
-            range,
-          );
-          if (persistentData?.summary) {
+          const heatmapData = await usageStatsApi.fetchRequestHeatmap(serviceUrl, managementKey, range);
+          if (heatmapData?.buckets) {
             postgresAvailableRef.current = true;
-            setHeatmapBuckets(buildPersistentHeatmapBuckets(persistentData));
+            setHeatmapBuckets(heatmapData.buckets);
             setMergedRecentBuckets([]);
             return;
           }
@@ -767,6 +767,9 @@ export function useUsageDashboard() {
       if (!covered || covered <= 0) return '-';
       return (totalReqs / covered).toFixed(2);
     }
+    if (data.source === 'postgres' && data.summary.rpm > 0) {
+      return data.summary.rpm.toFixed(2);
+    }
     const covered = deriveCoveredMinutes(data);
     if (covered !== null && covered > 0) {
       return (data.summary.totalRequests / covered).toFixed(2);
@@ -786,6 +789,10 @@ export function useUsageDashboard() {
   const tpmValue = useMemo<string>(() => {
     if (!data) return '-';
     if (data.summary.totalTokens <= 0) return '-';
+
+    if (data.source === 'postgres' && data.summary.tpm > 0) {
+      return formatCompactValue(data.summary.tpm);
+    }
 
     if (data.source === 'postgres') {
       const covered = deriveCoveredMinutes(data);
@@ -827,9 +834,9 @@ export function useUsageDashboard() {
     if (!data) return [];
 
     if (dataSource === 'postgres') {
-      const accountRows = data.byAccount ?? [];
-      return accountRows
-        .filter((a) => a.key.startsWith('api-key/') && a.requests > 0)
+      const apiKeyData = data.byApiKey ?? [];
+      return apiKeyData
+        .filter((a) => a.requests > 0)
         .map((a) => buildApiKeyDisplayRow(a, data.byModel ?? []))
         .sort((a, b) => b.requests - a.requests);
     }
@@ -897,7 +904,8 @@ export function useUsageDashboard() {
                 outputTokens: ms.outputTokens,
                 reasoningTokens: ms.reasoningTokens,
                 cachedTokens: ms.cachedTokens,
-                cacheTokens: ms.cachedTokens,
+                cacheReadTokens: 0,
+                cacheCreationTokens: 0,
                 totalTokens: ms.totalTokens,
               }))
               .sort((a, b) => b.requests - a.requests);
@@ -927,6 +935,7 @@ export function useUsageDashboard() {
   const authFileRows = useMemo<AuthFileDisplayRow[]>(() => {
     if (!data) return [];
     const accountRows = data.byAccount ?? [];
+    if (accountRows.length === 0) return [];
     return accountRows
       .filter((account) => account.key.startsWith('auth-file/') && account.requests > 0)
       .map((account) => {
@@ -953,13 +962,28 @@ export function useUsageDashboard() {
   const providerRows = useMemo<ProviderDisplayRow[]>(() => {
     if (!data) return [];
 
+    if (dataSource === 'postgres') {
+      return (postgresProviders ?? []).map((row) => ({
+        key: row.key,
+        label: row.label,
+        requests: row.requests,
+        successCount: row.successCount,
+        failureCount: row.failureCount,
+        totalTokens: row.totalTokens,
+        modelCount: 0,
+        cost: null,
+        childModels: [],
+      }));
+    }
+
     const authFileOwnedModelKeys = new Set(
-      data.byAccount
+      (data.byAccount ?? [])
         .filter((a) => a.key.startsWith('auth-file/') && a.childModels)
         .flatMap((a) => a.childModels!.map((m) => m.key))
     );
 
-    const baseProviders = data.byProvider.filter((r) => r.requests > 0);
+    const byProvider = data.byProvider ?? [];
+    const baseProviders = byProvider.filter((r) => r.requests > 0);
 
     if (memoryDetailsSnapshot.length > 0) {
       const providerTokenMap = new Map<string, {
@@ -1037,7 +1061,8 @@ export function useUsageDashboard() {
                 outputTokens: ms.outputTokens,
                 reasoningTokens: ms.reasoningTokens,
                 cachedTokens: ms.cachedTokens,
-                cacheTokens: ms.cachedTokens,
+                cacheReadTokens: 0,
+                cacheCreationTokens: 0,
                 totalTokens: ms.totalTokens,
                 provider: provKey,
               }))
@@ -1093,6 +1118,28 @@ export function useUsageDashboard() {
   }, [data, memoryDetailsSnapshot]);
 
   const sourceRows = useMemo<SourceDisplayRow[]>(() => {
+    if (dataSource === 'postgres' && postgresAccounts.length > 0) {
+      const auths = postgresAccounts.map((a) => ({
+        key: `auth:${a.key}`,
+        label: a.label || a.name || a.key,
+        sourceType: 'auth-file' as const,
+        provider: a.provider || '',
+        requests: a.success + a.failed,
+        successCount: a.success,
+        failureCount: a.failed,
+        totalTokens: 0,
+        modelCount: 0,
+        cost: null as number | null,
+        childModels: [] as UsageStatsGroupRow[],
+      }));
+      return [...auths, ...providerRows.map((r) => ({
+        ...r,
+        key: `prov:${r.key}`,
+        sourceType: 'provider' as const,
+        provider: '',
+      }))].sort((a, b) => b.requests - a.requests);
+    }
+
     const auths = authFileRows.map((r) => ({
       ...r,
       key: `auth:${r.key}`,
@@ -1105,7 +1152,7 @@ export function useUsageDashboard() {
       provider: '',
     }));
     return [...auths, ...provs].sort((a, b) => b.requests - a.requests);
-  }, [authFileRows, providerRows]);
+  }, [authFileRows, providerRows, dataSource, postgresAccounts]);
 
   const metricTrends = useMemo<{
     totalTokens?: TrendBucket[];
