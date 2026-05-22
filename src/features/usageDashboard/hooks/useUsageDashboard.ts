@@ -67,7 +67,9 @@ function deriveDefaultServiceUrl(apiBase: string): string {
   try {
     const base = normalizeApiBase(apiBase);
     const url = new URL(base);
-    url.port = USAGE_SERVICE_PORT;
+    if (url.protocol !== 'https:') {
+      url.port = USAGE_SERVICE_PORT;
+    }
     return url.origin;
   } catch {
     return `http://localhost:${USAGE_SERVICE_PORT}`;
@@ -861,7 +863,9 @@ export function useUsageDashboard() {
 
     if (dataSource === 'postgres') {
       const apiKeyData = data.byApiKey ?? [];
-      return apiKeyData
+      const accountData = data.byAccount ?? [];
+      const source = apiKeyData.length > 0 ? apiKeyData : accountData;
+      return source
         .filter((a) => a.requests > 0)
         .map((a) => buildApiKeyDisplayRow(a, data.byModel ?? []))
         .sort((a, b) => b.requests - a.requests);
