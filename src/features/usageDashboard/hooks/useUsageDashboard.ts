@@ -590,6 +590,25 @@ export function useUsageDashboard() {
   const apiKeyRows = useMemo<ApiKeyDisplayRow[]>(() => {
     if (!data) return [];
 
+    if (dataSource === 'postgres') {
+      const accountRows = data.byAccount ?? [];
+      return accountRows
+        .filter((a) => a.key.startsWith('api-key/') && a.requests > 0)
+        .map((a) => ({
+          key: a.key,
+          label: a.label,
+          requests: a.requests,
+          successCount: a.successCount,
+          failureCount: a.failureCount,
+          totalTokens: a.totalTokens,
+          modelCount: a.childModels?.length ?? 0,
+          cost: null,
+          hasModelAttribution: (a.childModels?.length ?? 0) > 0,
+          childModels: a.childModels ?? [],
+        }))
+        .sort((a, b) => b.requests - a.requests);
+    }
+
     if (memoryDetailsSnapshot.length > 0) {
       const keyMap = new Map<string, {
         requests: number;
@@ -675,7 +694,7 @@ export function useUsageDashboard() {
     }
 
     return [];
-  }, [data, memoryDetailsSnapshot]);
+  }, [data, dataSource, memoryDetailsSnapshot]);
 
   const authFileRows = useMemo<AuthFileDisplayRow[]>(() => {
     if (!data) return [];
