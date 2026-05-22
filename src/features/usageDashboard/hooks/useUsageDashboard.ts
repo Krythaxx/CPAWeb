@@ -215,6 +215,26 @@ function buildFallbackTokenTrends(
   };
 }
 
+function scaleTrendByTotal(
+  trend: TrendBucket[] | undefined,
+  partTotal: number,
+  wholeTotal: number,
+): TrendBucket[] | undefined {
+  if (!trend || trend.length === 0 || partTotal <= 0 || wholeTotal <= 0) {
+    return undefined;
+  }
+
+  const ratio = partTotal / wholeTotal;
+  return trend.map((point) => ({
+    timestamp: point.timestamp,
+    value: point.value * ratio,
+  }));
+}
+
+function zeroTrendFrom(trend: TrendBucket[] | undefined): TrendBucket[] | undefined {
+  return trend?.map((point) => ({ timestamp: point.timestamp, value: 0 }));
+}
+
 function selectMemoryUsageDetailsForStats(
   details: MemoryRequestLogDetail[],
   totalRequests: number
@@ -1099,6 +1119,14 @@ export function useUsageDashboard() {
     if (data.source === 'postgres' && data.summary) {
       const s = data.summary;
       const covered = deriveCoveredMinutes(data);
+      const inputTrend =
+        s.inputTrend ??
+        s.inputOutputTrend ??
+        scaleTrendByTotal(s.tokenTrend, s.inputTokens, s.totalTokens);
+      const outputTrend =
+        s.outputTrend ??
+        s.cacheTrend ??
+        scaleTrendByTotal(s.tokenTrend, s.outputTokens, s.totalTokens);
       const tpmTrend = s.tokenTrend && covered && covered > 0 && s.tokenTrend.length > 0
         ? s.tokenTrend.map((p) => ({
             timestamp: p.timestamp,
@@ -1107,8 +1135,8 @@ export function useUsageDashboard() {
         : undefined;
       return {
         totalTokens: s.tokenTrend,
-        inputTokens: s.inputOutputTrend,
-        outputTokens: s.cacheTrend,
+        inputTokens: inputTrend ?? zeroTrendFrom(outputTrend),
+        outputTokens: outputTrend,
         rpm: s.requestTrend,
         tpm: tpmTrend,
       };

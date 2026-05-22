@@ -18,6 +18,8 @@ export interface UsageStatsSummary {
   coveredMinutes?: number;
   requestTrend?: TrendBucket[];
   tokenTrend?: TrendBucket[];
+  inputTrend?: TrendBucket[];
+  outputTrend?: TrendBucket[];
   inputOutputTrend?: TrendBucket[];
   cacheTrend?: TrendBucket[];
 }

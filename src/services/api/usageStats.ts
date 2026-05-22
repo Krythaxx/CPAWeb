@@ -1114,6 +1114,8 @@ function normalizePersistentStatsResponse(
   const coveredMinutes = readNumberField(summaryRecord, COVERED_MINUTES_KEYS);
   const requestTrend = normalizeTrendBuckets(readKnownField(summaryRecord, ['requestTrend', 'request_trend']));
   const tokenTrend = normalizeTrendBuckets(readKnownField(summaryRecord, ['tokenTrend', 'token_trend']));
+  const inputTrend = normalizeTrendBuckets(readKnownField(summaryRecord, ['inputTrend', 'input_trend']));
+  const outputTrend = normalizeTrendBuckets(readKnownField(summaryRecord, ['outputTrend', 'output_trend']));
   const inputOutputTrend = normalizeTrendBuckets(
     readKnownField(summaryRecord, ['inputOutputTrend', 'input_output_trend'])
   );
@@ -1124,6 +1126,8 @@ function normalizePersistentStatsResponse(
   if (coveredMinutes > 0) summary.coveredMinutes = coveredMinutes;
   if (requestTrend) summary.requestTrend = requestTrend;
   if (tokenTrend) summary.tokenTrend = tokenTrend;
+  if (inputTrend) summary.inputTrend = inputTrend;
+  if (outputTrend) summary.outputTrend = outputTrend;
   if (inputOutputTrend) summary.inputOutputTrend = inputOutputTrend;
   if (cacheTrend) summary.cacheTrend = cacheTrend;
 
