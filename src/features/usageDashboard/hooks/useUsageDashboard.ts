@@ -64,10 +64,7 @@ function deriveDefaultServiceUrl(apiBase: string): string {
   try {
     const base = normalizeApiBase(apiBase);
     const url = new URL(base);
-    const currentPort = parseInt(url.port, 10);
-    if (Number.isFinite(currentPort) && currentPort > 0) {
-      url.port = '18317';
-    }
+    url.port = '18317';
     return url.origin;
   } catch {
     return `http://localhost:18317`;
