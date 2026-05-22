@@ -861,9 +861,7 @@ export function useUsageDashboard() {
 
     if (dataSource === 'postgres') {
       const apiKeyData = data.byApiKey ?? [];
-      const accountData = data.byAccount ?? [];
-      const source = apiKeyData.length > 0 ? apiKeyData : accountData;
-      return source
+      return apiKeyData
         .filter((a) => a.requests > 0)
         .map((a) => buildApiKeyDisplayRow(a, data.byModel ?? []))
         .sort((a, b) => b.requests - a.requests);

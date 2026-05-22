@@ -71,9 +71,7 @@ export function UsageStatsPage() {
     if (!s || !showTokenColumns || s.totalTokens <= 0) return undefined;
     const byModel = dashboard.data?.byModel ?? [];
     const byApiKey = dashboard.data?.byApiKey ?? [];
-    const byAccount = dashboard.data?.byAccount ?? [];
-    const accountSource = byApiKey.length > 0 ? byApiKey : byAccount;
-    const modelRows = byModel.length > 0 ? byModel : accountSource.flatMap((k) => k.childModels ?? []);
+    const modelRows = byModel.length > 0 ? byModel : byApiKey.flatMap((k) => k.childModels ?? []);
     let total = 0;
     let hasPrice = false;
     for (const row of modelRows) {
