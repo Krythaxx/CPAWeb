@@ -64,7 +64,6 @@ function deriveDefaultServiceUrl(apiBase: string): string {
   try {
     const base = normalizeApiBase(apiBase);
     const url = new URL(base);
-    url.port = '18317';
     return url.origin;
   } catch {
     return `http://localhost:18317`;
