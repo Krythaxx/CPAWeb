@@ -13,6 +13,8 @@ interface PriceManagerModalProps {
   onUpdateEntry: (model: string, input: number, cacheHit: number, output: number) => void;
   onRemoveEntry: (model: string) => void;
   onClearAll: () => void;
+  onSyncToBackend: () => Promise<void>;
+  onLoadFromBackend: () => Promise<void>;
 }
 
 export function PriceManagerModal({
@@ -23,8 +25,12 @@ export function PriceManagerModal({
   onUpdateEntry,
   onRemoveEntry,
   onClearAll,
+  onSyncToBackend,
+  onLoadFromBackend,
 }: PriceManagerModalProps) {
   const { t } = useTranslation();
+  const [syncing, setSyncing] = useState(false);
+  const [loadingDb, setLoadingDb] = useState(false);
 
   const allModels = useMemo(() => {
     const set = new Set<string>();
@@ -72,6 +78,38 @@ export function PriceManagerModal({
         <div className={styles.footer}>
           <Button size="sm" onClick={onClearAll}>
             {t('usage_dashboard.clear_all_prices')}
+          </Button>
+          <Button
+            size="sm"
+            disabled={loadingDb}
+            onClick={async () => {
+              setLoadingDb(true);
+              try {
+                await onLoadFromBackend();
+              } catch {
+                // ignored
+              } finally {
+                setLoadingDb(false);
+              }
+            }}
+          >
+            {loadingDb ? t('usage_dashboard.loading_db') : t('usage_dashboard.load_from_database')}
+          </Button>
+          <Button
+            size="sm"
+            disabled={syncing}
+            onClick={async () => {
+              setSyncing(true);
+              try {
+                await onSyncToBackend();
+              } catch {
+                // ignored
+              } finally {
+                setSyncing(false);
+              }
+            }}
+          >
+            {syncing ? t('usage_dashboard.syncing') : t('usage_dashboard.sync_to_database')}
           </Button>
           <Button size="sm" onClick={onClose}>
             {t('common.close')}

@@ -35,60 +35,44 @@ function saveTable(table: PriceEntry[]) {
 
 interface UsePriceTableOptions {
   serviceUrl: string;
-  preferBackend: boolean;
 }
 
 export function usePriceTable(options?: UsePriceTableOptions) {
   const managementKey = useAuthStore((state) => state.managementKey);
   const serviceUrl = options?.serviceUrl ?? '';
-  const preferBackend = Boolean(options?.preferBackend);
-  const [table, setTable] = useState<PriceEntry[]>(loadTable);
-  const [backendPricesEnabled, setBackendPricesEnabled] = useState(false);
+  const [table, setTable] = useState<PriceEntry[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
 
     void (async () => {
-      if (!preferBackend || !serviceUrl || !managementKey) {
-        if (cancelled) return;
-        setBackendPricesEnabled(false);
-        setTable(loadTable());
-        return;
+      if (serviceUrl && managementKey) {
+        try {
+          const prices = await usageStatsApi.fetchPrices(serviceUrl, managementKey);
+          if (cancelled) return;
+          setTable(prices);
+          setLoading(false);
+          return;
+        } catch {
+          // fallback to localStorage
+        }
       }
 
-      try {
-        const prices = await usageStatsApi.fetchPrices(serviceUrl, managementKey);
-        if (cancelled) return;
-        setBackendPricesEnabled(true);
-        setTable(prices);
-      } catch {
-        if (cancelled) return;
-        setBackendPricesEnabled(false);
-        setTable(loadTable());
-      }
+      if (cancelled) return;
+      setTable(loadTable());
+      setLoading(false);
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [managementKey, preferBackend, serviceUrl]);
+  }, [managementKey, serviceUrl]);
 
-  const persistTable = useCallback(
-    (next: PriceEntry[]) => {
-      if (backendPricesEnabled && serviceUrl && managementKey) {
-        void usageStatsApi
-          .savePrices(serviceUrl, managementKey, next)
-          .catch(() => {
-            setBackendPricesEnabled(false);
-            saveTable(next);
-          });
-        return;
-      }
-
-      saveTable(next);
-    },
-    [backendPricesEnabled, managementKey, serviceUrl],
-  );
+  const persistTable = useCallback((next: PriceEntry[]) => {
+    saveTable(next);
+  }, []);
 
   const updateEntry = useCallback((model: string, input: number, cacheHit: number, output: number) => {
     setTable((prev) => {
@@ -116,10 +100,21 @@ export function usePriceTable(options?: UsePriceTableOptions) {
   const clearAll = useCallback(() => {
     setTable([]);
     persistTable([]);
-    if (!backendPricesEnabled) {
-      localStorage.removeItem(STORAGE_KEY);
-    }
-  }, [backendPricesEnabled, persistTable]);
+  }, [persistTable]);
 
-  return { table, updateEntry, removeEntry, clearAll };
+  const syncToBackend = useCallback(async () => {
+    if (!serviceUrl || !managementKey) return;
+    await usageStatsApi.savePrices(serviceUrl, managementKey, table);
+  }, [serviceUrl, managementKey, table]);
+
+  const loadFromBackend = useCallback(async () => {
+    if (!serviceUrl || !managementKey) return;
+    const prices = await usageStatsApi.fetchPrices(serviceUrl, managementKey);
+    if (Array.isArray(prices) && prices.length > 0) {
+      setTable(prices);
+      persistTable(prices);
+    }
+  }, [serviceUrl, managementKey, persistTable]);
+
+  return { table, loading, updateEntry, removeEntry, clearAll, syncToBackend, loadFromBackend };
 }
