@@ -871,10 +871,11 @@ export function useUsageDashboard() {
       const apiKeyData = data.byApiKey ?? [];
       const accountData = data.byAccount ?? [];
       const source = apiKeyData.length > 0 ? apiKeyData : accountData;
+      const byModel = data.byModel ?? [];
       return source
         .filter((a) => a.requests > 0)
         .map((a) => {
-          const base = buildApiKeyDisplayRow(a, data.byModel ?? []);
+          const base = buildApiKeyDisplayRow(a, byModel);
           if (apiKeyModelDetails) {
             const details = apiKeyModelDetails.get(a.key);
             if (details && details.length > 0) {
@@ -885,6 +886,20 @@ export function useUsageDashboard() {
                 modelCount: new Set(merged.map((m) => m.label)).size,
                 hasModelAttribution: merged.length > 0,
                 totalTokens: merged.reduce((sum, m) => sum + m.totalTokens, 0) || base.totalTokens,
+              };
+            }
+          }
+          if (base.childModels.length === 0 && a.provider) {
+            const providerModels = byModel.filter(
+              (m) => m.provider === a.provider && m.requests > 0
+            );
+            if (providerModels.length > 0) {
+              return {
+                ...base,
+                childModels: providerModels.map((m) => ({ ...m })),
+                modelCount: new Set(providerModels.map((m) => m.label)).size,
+                hasModelAttribution: providerModels.length > 0,
+                totalTokens: providerModels.reduce((sum, m) => sum + m.totalTokens, 0) || base.totalTokens,
               };
             }
           }
