@@ -12,6 +12,7 @@ import {
   computeApiKeyHash,
   maskApiKeyForDisplay,
   tokenCountTotal,
+  buildMemoryProviders,
   type PrecomputedApiKeyHashMap,
   type MemoryRequestLogDetail,
 } from '@/services/api/usageStats';
@@ -585,6 +586,7 @@ export function useUsageDashboard() {
   );
 
   const [postgresProviders, setPostgresProviders] = useState<ProviderRow[]>([]);
+  const [memoryProviders, setMemoryProviders] = useState<ProviderRow[]>([]);
   const [apiKeyModelDetails, setApiKeyModelDetails] = useState<Map<string, UsageStatsGroupRow[]> | null>(null);
 
   const resetPostgresDetection = useCallback(() => {
@@ -619,6 +621,7 @@ export function useUsageDashboard() {
     setLoading(true);
     setError(null);
     setApiKeyModelDetails(null);
+    setMemoryProviders([]);
 
     try {
       if (postgresAvailableRef.current !== false) {
@@ -742,6 +745,16 @@ export function useUsageDashboard() {
       setDataSource('memory');
       setData(normalized);
       setMemoryDetailsSnapshot(memoryUsageDetailsRef.current);
+
+      try {
+        const providerConfig = await usageStatsApi.fetchProviderConfigs();
+        if (ac.signal.aborted) return;
+        const providers = buildMemoryProviders(rawMemory, providerConfig);
+        setMemoryProviders(providers);
+      } catch {
+        setMemoryProviders([]);
+      }
+
       setLastRefreshTime(new Date().toLocaleTimeString());
     } catch (err: unknown) {
       if (ac.signal.aborted) return;
@@ -1181,14 +1194,15 @@ export function useUsageDashboard() {
   }, [data, dataSource, memoryDetailsSnapshot]);
 
   const sourceRows = useMemo<SourceDisplayRow[]>(() => {
-    if (dataSource === 'postgres') {
-      return (postgresProviders ?? []).map((row) => {
+    const providers = dataSource === 'postgres' ? postgresProviders : memoryProviders;
+    if (providers.length > 0) {
+      return providers.map((row) => {
         const childModels = row.childModels ?? [];
         return {
           key: row.authIndex ? `auth:${row.key}` : `prov:${row.key}`,
           label: row.label,
           sourceType: (row.authIndex ? 'auth-file' : 'provider') as 'auth-file' | 'provider',
-          provider: row.authIndex ? (row.provider ?? '') : '',
+          provider: row.provider ?? '',
           requests: row.requests,
           successCount: row.successCount,
           failureCount: row.failureCount,
@@ -1200,46 +1214,8 @@ export function useUsageDashboard() {
       }).sort((a, b) => b.requests - a.requests);
     }
 
-    if (!data) return [];
-
-    const authAccounts = (data.byAccount ?? [])
-      .filter((a) => a.key.startsWith('auth-file/') && a.requests > 0);
-    const authRows: SourceDisplayRow[] = authAccounts.map((account) => {
-      const childModels = account.childModels ?? (account.provider
-        ? data.byModel.filter((m) => m.provider === account.provider)
-        : []);
-      const childTotalTokens = childModels.reduce((sum, m) => sum + m.totalTokens, 0);
-      return {
-        key: `auth:auth-file/${account.key.replace('auth-file/', '')}`,
-        label: account.label,
-        sourceType: 'auth-file' as const,
-        provider: account.provider ?? '',
-        requests: account.requests,
-        successCount: account.successCount,
-        failureCount: account.failureCount,
-        totalTokens: childTotalTokens > 0 ? childTotalTokens : account.totalTokens,
-        modelCount: new Set(childModels.map((m) => m.label)).size,
-        cost: null as number | null,
-        childModels,
-      };
-    });
-
-    const provRows: SourceDisplayRow[] = providerRows.map((r) => ({
-      key: `prov:${r.key}`,
-      label: r.label,
-      sourceType: 'provider' as const,
-      provider: '',
-      requests: r.requests,
-      successCount: r.successCount,
-      failureCount: r.failureCount,
-      totalTokens: r.totalTokens,
-      modelCount: r.modelCount,
-      cost: null as number | null,
-      childModels: r.childModels,
-    }));
-
-    return [...authRows, ...provRows].sort((a, b) => b.requests - a.requests);
-  }, [data, providerRows, dataSource, postgresProviders]);
+    return [];
+  }, [dataSource, postgresProviders, memoryProviders]);
 
   const metricTrends = useMemo<{
     totalTokens?: TrendBucket[];

@@ -255,6 +255,20 @@ export interface MemoryRequestLogDetail {
   tokens: TokenCounts;
 }
 
+export interface ProviderConfigEntry {
+  authIndex: string;
+  provider: string;
+  type: string;
+  name: string;
+  prefix: string;
+  apiKey: string;
+}
+
+export interface ProviderConfigSnapshot {
+  entries: ProviderConfigEntry[];
+  authFiles: AuthFileItem[];
+}
+
 function resolveServiceUrl(serviceUrl: string): string {
   let base = serviceUrl.trim().replace(/\/+$/, '');
   if (!/^https?:\/\//i.test(base)) {
@@ -472,6 +486,116 @@ export const usageStatsApi = {
       }
       return result;
     }, []);
+  },
+
+  async fetchProviderConfigs(): Promise<ProviderConfigSnapshot> {
+    const [codexResult, claudeResult, geminiResult, openaiResult, vertexResult, authFilesResult] =
+      await Promise.allSettled([
+        apiClient.get('/codex-api-key', { timeout: 10 * 1000 }),
+        apiClient.get('/claude-api-key', { timeout: 10 * 1000 }),
+        apiClient.get('/gemini-api-key', { timeout: 10 * 1000 }),
+        apiClient.get('/openai-compatibility', { timeout: 10 * 1000 }),
+        apiClient.get('/vertex-api-key', { timeout: 10 * 1000 }),
+        apiClient.get<AuthFilesResponse>('/auth-files', { timeout: 10 * 1000 }),
+      ]);
+
+    const entries: ProviderConfigEntry[] = [];
+
+    const extractArray = (data: unknown, key: string): unknown[] => {
+      if (Array.isArray(data)) return data;
+      if (!isRecord(data)) return [];
+      const candidate = (data as Record<string, unknown>)[key] ?? data;
+      return Array.isArray(candidate) ? candidate : [];
+    };
+
+    const readAuthIndex = (r: Record<string, unknown>): string => {
+      for (const k of AUTH_INDEX_KEYS) {
+        const v = r[k];
+        if (typeof v === 'string' && v.trim()) return v.trim();
+        if (typeof v === 'number') return String(v);
+      }
+      return '';
+    };
+
+    const addConfigEntry = (provider: string, type: string, r: Record<string, unknown>) => {
+      const authIndex = readAuthIndex(r);
+      if (!authIndex) return;
+      entries.push({
+        authIndex,
+        provider: provider.toLowerCase(),
+        type,
+        name: String(r.name ?? type),
+        prefix: String(r.prefix ?? ''),
+        apiKey: String(r['api-key'] ?? r.apiKey ?? ''),
+      });
+    };
+
+    if (codexResult.status === 'fulfilled') {
+      for (const item of extractArray(codexResult.value, 'codex-api-key')) {
+        if (isRecord(item)) addConfigEntry('codex', 'codex-apikey', item as Record<string, unknown>);
+      }
+    }
+
+    if (claudeResult.status === 'fulfilled') {
+      for (const item of extractArray(claudeResult.value, 'claude-api-key')) {
+        if (isRecord(item)) addConfigEntry('claude', 'claude-apikey', item as Record<string, unknown>);
+      }
+    }
+
+    if (geminiResult.status === 'fulfilled') {
+      for (const item of extractArray(geminiResult.value, 'gemini-api-key')) {
+        if (isRecord(item)) addConfigEntry('gemini', 'gemini-apikey', item as Record<string, unknown>);
+      }
+    }
+
+    if (openaiResult.status === 'fulfilled') {
+      for (const item of extractArray(openaiResult.value, 'openai-compatibility')) {
+        if (!isRecord(item)) continue;
+        const prov = item as Record<string, unknown>;
+        const providerName = String(prov.name ?? 'openai-compat').toLowerCase();
+        const provAuthIndex = readAuthIndex(prov);
+        if (provAuthIndex) {
+          entries.push({
+            authIndex: provAuthIndex,
+            provider: providerName,
+            type: 'openai-compatibility',
+            name: String(prov.name ?? 'openai-compat'),
+            prefix: String(prov.prefix ?? ''),
+            apiKey: '',
+          });
+        }
+        const apiEntries = prov['api-key-entries'] ?? prov.apiKeyEntries;
+        if (Array.isArray(apiEntries)) {
+          for (const entry of apiEntries) {
+            if (!isRecord(entry)) continue;
+            const entryAuthIndex = readAuthIndex(entry as Record<string, unknown>);
+            if (entryAuthIndex && entryAuthIndex !== provAuthIndex) {
+              entries.push({
+                authIndex: entryAuthIndex,
+                provider: providerName,
+                type: 'openai-compatibility',
+                name: String(prov.name ?? 'openai-compat'),
+                prefix: String(prov.prefix ?? ''),
+                apiKey: String((entry as Record<string, unknown>)['api-key'] ?? ''),
+              });
+            }
+          }
+        }
+      }
+    }
+
+    if (vertexResult.status === 'fulfilled') {
+      for (const item of extractArray(vertexResult.value, 'vertex-api-key')) {
+        if (isRecord(item)) addConfigEntry('vertex', 'vertex-apikey', item as Record<string, unknown>);
+      }
+    }
+
+    const authFiles =
+      authFilesResult.status === 'fulfilled' && Array.isArray(authFilesResult.value?.files)
+        ? authFilesResult.value.files
+        : [];
+
+    return { entries, authFiles };
   },
 };
 
@@ -1919,7 +2043,268 @@ export function normalizeMemoryStats(
   };
 }
 
-const LEGACY_ARRAY_KEYS = ['details', 'events', 'records', 'items'];
+export function buildMemoryProviders(
+  payload: MemoryStatsPayload,
+  config: ProviderConfigSnapshot,
+): ProviderRow[] {
+  const { entries: configEntries, authFiles } = config;
+
+  const authIndexMap = new Map<string, ProviderConfigEntry>();
+  for (const entry of configEntries) {
+    authIndexMap.set(entry.authIndex, entry);
+  }
+
+  const apiKeyPrefixMap = new Map<string, string>();
+  for (const entry of configEntries) {
+    if (entry.apiKey && entry.apiKey.length >= 4) {
+      apiKeyPrefixMap.set(entry.apiKey, entry.authIndex);
+      apiKeyPrefixMap.set(entry.apiKey.slice(0, 8), entry.authIndex);
+    }
+    if (entry.prefix && entry.prefix.length >= 4) {
+      apiKeyPrefixMap.set(entry.prefix, entry.authIndex);
+    }
+  }
+
+  const authFileMap = new Map<string, AuthFileItem>();
+  for (const file of authFiles) {
+    const record = file as Record<string, unknown>;
+    const rawAuthIndex = normalizeRecentRequestAuthIndex(readKnownField(record, AUTH_INDEX_KEYS));
+    if (rawAuthIndex) {
+      authFileMap.set(rawAuthIndex, file);
+    }
+  }
+
+  type ModelAccum = {
+    requests: number;
+    successCount: number;
+    failureCount: number;
+    inputTokens: number;
+    outputTokens: number;
+    reasoningTokens: number;
+    cachedTokens: number;
+    totalTokens: number;
+  };
+
+  const providerGroups = new Map<string, {
+    authIndex: string;
+    provider: string;
+    label: string;
+    type: string;
+    requests: number;
+    successCount: number;
+    failureCount: number;
+    inputTokens: number;
+    outputTokens: number;
+    reasoningTokens: number;
+    cachedTokens: number;
+    totalTokens: number;
+    childModels: Map<string, ModelAccum>;
+  }>();
+
+  const getOrCreateGroup = (groupKey: string, authIndex: string, provider: string, label: string, type: string) => {
+    let group = providerGroups.get(groupKey);
+    if (!group) {
+      group = {
+        authIndex,
+        provider,
+        label,
+        type,
+        requests: 0,
+        successCount: 0,
+        failureCount: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        reasoningTokens: 0,
+        cachedTokens: 0,
+        totalTokens: 0,
+        childModels: new Map(),
+      };
+      providerGroups.set(groupKey, group);
+    }
+    return group;
+  };
+
+  const addModelToGroup = (group: ReturnType<typeof getOrCreateGroup>, modelName: string, success: number, failure: number, tokens: { inputTokens: number; outputTokens: number; reasoningTokens: number; cachedTokens: number; totalTokens: number }) => {
+    let m = group.childModels.get(modelName);
+    if (!m) {
+      m = { requests: 0, successCount: 0, failureCount: 0, inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cachedTokens: 0, totalTokens: 0 };
+      group.childModels.set(modelName, m);
+    }
+    m.requests += success + failure;
+    m.successCount += success;
+    m.failureCount += failure;
+    m.inputTokens += tokens.inputTokens;
+    m.outputTokens += tokens.outputTokens;
+    m.reasoningTokens += tokens.reasoningTokens;
+    m.cachedTokens += tokens.cachedTokens;
+    m.totalTokens += tokens.totalTokens;
+  };
+
+  const resolveAuthIndex = (authKey: string, entry: Record<string, unknown>): string => {
+    for (const k of AUTH_INDEX_KEYS) {
+      const v = entry[k];
+      if (typeof v === 'string' && v.trim()) return v.trim();
+      if (typeof v === 'number') return String(v);
+    }
+    if (authKey && apiKeyPrefixMap.has(authKey)) {
+      return apiKeyPrefixMap.get(authKey)!;
+    }
+    for (const [prefix, idx] of apiKeyPrefixMap) {
+      if (authKey.startsWith(prefix) || prefix.startsWith(authKey)) {
+        return idx;
+      }
+    }
+    return '';
+  };
+
+  const rawApiKeyEntries = Object.entries(payload.apiKeyUsage || {});
+  for (const [rawProviderKey, keyEntries] of rawApiKeyEntries) {
+    const providerKey = normalizeProviderKey(rawProviderKey);
+    if (!keyEntries || typeof keyEntries !== 'object') continue;
+
+    for (const [authKey, entry] of Object.entries(keyEntries)) {
+      const rec = entry as Record<string, unknown> | null | undefined;
+      if (!rec || typeof rec !== 'object') continue;
+
+      const { success, failure } = readUsageCounts(rec);
+      const tokens = readAggregateTokenCounts(rec);
+      const authIndex = resolveAuthIndex(authKey, rec);
+
+      const groupKey = authIndex ? `auth-index/${authIndex}/${providerKey}` : `provider/${providerKey}`;
+      const configEntry = authIndex ? authIndexMap.get(authIndex) : undefined;
+      const label = configEntry?.prefix
+        ? maskApiKeyForDisplay(configEntry.prefix + '***')
+        : (authIndex ? `auth-index/${authIndex}` : providerKey);
+
+      const group = getOrCreateGroup(groupKey, authIndex, providerKey, label, configEntry?.type ?? 'api-key');
+
+      group.requests += success + failure;
+      group.successCount += success;
+      group.failureCount += failure;
+      group.inputTokens += tokens.inputTokens;
+      group.outputTokens += tokens.outputTokens;
+      group.reasoningTokens += tokens.reasoningTokens;
+      group.cachedTokens += tokens.cachedTokens;
+      group.totalTokens += tokenCountTotal(tokens);
+
+      const modelMap = new Map<string, { success: number; failure: number; tokens: ReturnType<typeof readAggregateTokenCounts> }>();
+      addModelRowsFromRecord(
+        modelMap as unknown as Map<string, UsageStatsGroupRow>,
+        providerKey,
+        rec,
+      );
+      for (const [modelKey, modelData] of modelMap) {
+        const modelRec = modelData as unknown as Record<string, unknown>;
+        const mSuccess = typeof modelRec.success === 'number' ? modelRec.success : (success || 0);
+        const mFailure = typeof modelRec.failure === 'number' ? modelRec.failure : (failure || 0);
+        const mTokens = readAggregateTokenCounts(modelRec);
+        addModelToGroup(group, modelKey, mSuccess, mFailure, {
+          inputTokens: mTokens.inputTokens || tokens.inputTokens,
+          outputTokens: mTokens.outputTokens || tokens.outputTokens,
+          reasoningTokens: mTokens.reasoningTokens || tokens.reasoningTokens,
+          cachedTokens: mTokens.cachedTokens || tokens.cachedTokens,
+          totalTokens: mTokens.totalTokens || tokenCountTotal(tokens),
+        });
+      }
+    }
+  }
+
+  const authFileItems = selectAuthFilesWithStats(authFiles);
+  const authFileLabels = authFileItems.map((file, index) => {
+    const record = file as Record<string, unknown>;
+    const name = String(file.name ?? '').trim();
+    const rawLabel = stripJsonSuffix(name || `auth-${index + 1}`);
+    const rawAuthIndex = readKnownField(record, AUTH_INDEX_KEYS);
+    const authIndexKey = normalizeRecentRequestAuthIndex(rawAuthIndex);
+    const key = authIndexKey || name || `auth-${index}`;
+    const providerKey = normalizeProviderKey(file.provider ?? file.type, '');
+    return { key, rawLabel, suffix: providerKey || String(index + 1) };
+  });
+  const labelMap = disambiguateLabels(authFileLabels);
+
+  for (const file of authFileItems) {
+    const record = file as Record<string, unknown>;
+    const providerKey = normalizeProviderKey(file.provider ?? file.type, 'auth-files');
+    const { success, failure } = readUsageCounts(record);
+    const tokens = readAggregateTokenCounts(record);
+
+    const rawAuthIndex = readKnownField(record, AUTH_INDEX_KEYS);
+    const authIndex = normalizeRecentRequestAuthIndex(rawAuthIndex);
+    const name = String(file.name ?? '').trim();
+    const key = authIndex || name;
+    const label = labelMap.get(key) ?? stripJsonSuffix(name);
+
+    const groupKey = authIndex ? `auth-index/${authIndex}/${providerKey}` : `auth-file/${key}`;
+    const group = getOrCreateGroup(groupKey, authIndex ?? '', providerKey, label, 'auth-file');
+
+    group.requests += success + failure;
+    group.successCount += success;
+    group.failureCount += failure;
+    group.inputTokens += tokens.inputTokens;
+    group.outputTokens += tokens.outputTokens;
+    group.reasoningTokens += tokens.reasoningTokens;
+    group.cachedTokens += tokens.cachedTokens;
+    group.totalTokens += tokenCountTotal(tokens);
+
+    const authChildModelMap = new Map<string, UsageStatsGroupRow>();
+    addModelRowsFromRecord(authChildModelMap, providerKey, record);
+    for (const [modelKey, modelRow] of authChildModelMap) {
+      addModelToGroup(group, modelKey, modelRow.successCount, modelRow.failureCount, {
+        inputTokens: modelRow.inputTokens,
+        outputTokens: modelRow.outputTokens,
+        reasoningTokens: modelRow.reasoningTokens,
+        cachedTokens: modelRow.cachedTokens,
+        totalTokens: modelRow.totalTokens,
+      });
+    }
+  }
+
+  const results: ProviderRow[] = [];
+  for (const group of providerGroups.values()) {
+    if (group.requests === 0) continue;
+
+    const childModels: UsageStatsGroupRow[] = Array.from(group.childModels.entries())
+      .map(([modelName, m]) => ({
+        key: `${group.provider}/${modelName}`,
+        label: modelName,
+        model: modelName,
+        provider: group.provider,
+        requests: m.requests,
+        successCount: m.successCount,
+        failureCount: m.failureCount,
+        successRate: m.requests > 0 ? m.successCount / m.requests : 0,
+        inputTokens: m.inputTokens,
+        outputTokens: m.outputTokens,
+        reasoningTokens: m.reasoningTokens,
+        cachedTokens: m.cachedTokens,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        totalTokens: m.totalTokens,
+      }))
+      .sort((a, b) => b.requests - a.requests);
+
+    results.push({
+      key: group.authIndex ? `auth-index/${group.authIndex}` : group.provider,
+      label: group.label,
+      provider: group.provider,
+      authIndex: group.authIndex || undefined,
+      requests: group.requests,
+      successCount: group.successCount,
+      failureCount: group.failureCount,
+      successRate: group.requests > 0 ? group.successCount / group.requests : 0,
+      totalTokens: group.totalTokens,
+      inputTokens: group.inputTokens,
+      outputTokens: group.outputTokens,
+      reasoningTokens: group.reasoningTokens,
+      cachedTokens: group.cachedTokens,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      childModels: childModels.length > 0 ? childModels : undefined,
+    });
+  }
+
+  return results.sort((a, b) => b.requests - a.requests);
+}
 
 export function isCanonicalResponse(value: unknown): boolean {
   if (!isRecord(value)) return false;
@@ -1932,7 +2317,7 @@ export function isCanonicalResponse(value: unknown): boolean {
 
 export function isLegacyEventPayload(value: unknown): boolean {
   if (!isRecord(value)) return false;
-  return LEGACY_ARRAY_KEYS.some(
+  return ['details', 'events', 'records', 'items'].some(
     (key) => Array.isArray(value[key]) && (value[key] as unknown[]).length > 0
   );
 }
