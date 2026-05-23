@@ -25,7 +25,6 @@ import type {
   ProviderDisplayRow,
   SourceDisplayRow,
   TrendBucket,
-  DataCoverageInfo,
   UsageStatsSummary,
   UsageStatsGroupRow,
   ProviderRow,
@@ -585,7 +584,6 @@ export function useUsageDashboard() {
     loadCachedMemoryUsageDetails()
   );
 
-  const [dataCoverage, setDataCoverage] = useState<DataCoverageInfo | null>(null);
   const [postgresProviders, setPostgresProviders] = useState<ProviderRow[]>([]);
   const [apiKeyModelDetails, setApiKeyModelDetails] = useState<Map<string, UsageStatsGroupRow[]> | null>(null);
 
@@ -639,7 +637,6 @@ export function useUsageDashboard() {
 
             setDataSource('postgres');
             setData(normalizedPersistentData);
-            setDataCoverage(null);
             setMergedRecentBuckets([]);
             setApiKeyModelDetails(
               apiKeyDetailsResult.status === 'fulfilled' ? apiKeyDetailsResult.value : null
@@ -667,7 +664,7 @@ export function useUsageDashboard() {
       if (ac.signal.aborted) return;
 
       const canonicalBuckets = buildCanonicalBucketsFromRaw(rawMemory);
-      const { filtered: filteredBuckets, coverage } = filterBucketsByRange(canonicalBuckets, range);
+      const { filtered: filteredBuckets } = filterBucketsByRange(canonicalBuckets, range);
       setMergedRecentBuckets(filteredBuckets);
 
       const configuredApiKeys = useConfigStore.getState().config?.apiKeys as string[] | undefined;
@@ -738,14 +735,12 @@ export function useUsageDashboard() {
       ) {
         setDataSource('unavailable');
         setData(null);
-        setDataCoverage(null);
         setError(t('usage_stats.empty_memory_disabled'));
         return;
       }
 
       setDataSource('memory');
       setData(normalized);
-      setDataCoverage(coverage);
       setMemoryDetailsSnapshot(memoryUsageDetailsRef.current);
       setLastRefreshTime(new Date().toLocaleTimeString());
     } catch (err: unknown) {
@@ -757,7 +752,6 @@ export function useUsageDashboard() {
       }
       setDataSource('error');
       setData(null);
-      setDataCoverage(null);
       setError(finalMessage);
     } finally {
       setLoading(false);
@@ -1454,7 +1448,6 @@ export function useUsageDashboard() {
     providerRows,
     sourceRows,
     metricTrends,
-    dataCoverage,
     resetPostgresDetection,
   };
 }

@@ -1539,6 +1539,7 @@
     "col_source": "Source",
     "col_type": "Type",
     "coverage_warning": "Heatmap and RPM data covers approximately 3.3 hours in memory mode",
+    "memory_mode_notice": "Memory mode: showing lifetime totals; heatmap and RPM cover recent data only",
     "lifetime_totals": "(Lifetime totals)"
   }
 }

@@ -1,8 +1,9 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useUsageDashboard } from '@/features/usageDashboard/hooks/useUsageDashboard';
 import { useAutoRefresh } from '@/features/usageDashboard/hooks/useAutoRefresh';
 import { usePriceTable } from '@/features/usageDashboard/hooks/usePriceTable';
+import { useNotificationStore } from '@/stores';
 import { UsageToolbar } from '@/features/usageDashboard/components/UsageToolbar';
 import { ApiKeyHeatmap } from '@/features/usageDashboard/components/ApiKeyHeatmap';
 import { MetricCard } from '@/features/usageDashboard/components/MetricCard';
@@ -28,6 +29,8 @@ export function UsageStatsPage() {
   });
   const [autoRefreshInterval, setAutoRefreshInterval] = useState(30);
   const [priceModalOpen, setPriceModalOpen] = useState(false);
+  const showNotification = useNotificationStore((s) => s.showNotification);
+  const prevDataSourceRef = useRef(dashboard.dataSource);
 
   const autoRefresh = useAutoRefresh(() => {
     dashboard.refresh();
@@ -49,6 +52,13 @@ export function UsageStatsPage() {
     dashboard.refreshHeatmap();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dashboard.range, dashboard.serviceUrl]);
+
+  useEffect(() => {
+    if (dashboard.dataSource === 'memory' && prevDataSourceRef.current !== 'memory') {
+      showNotification(t('usage_dashboard.memory_mode_notice'), 'info', 5000);
+    }
+    prevDataSourceRef.current = dashboard.dataSource;
+  }, [dashboard.dataSource, showNotification, t]);
 
   const handleRefresh = useCallback(() => {
     dashboard.resetPostgresDetection();
@@ -101,7 +111,6 @@ export function UsageStatsPage() {
         onRefresh={handleRefresh}
         loading={dashboard.loading}
         onOpenPriceManager={() => setPriceModalOpen(true)}
-        dataCoverage={isMemory && dashboard.data ? dashboard.dataCoverage : null}
       />
 
       {dashboard.loading && !dashboard.data && (
@@ -154,11 +163,6 @@ export function UsageStatsPage() {
           </div>
 
           <div className={styles.tablesGrid}>
-            {isMemory && (
-              <div className={styles.tableNote}>
-                {t('usage_dashboard.lifetime_totals')}
-              </div>
-            )}
             <div className={`${styles.tablePanel} ${styles.apiKeyTablePanel}`}>
               <ApiKeyTable
                 rows={dashboard.apiKeyRows}
