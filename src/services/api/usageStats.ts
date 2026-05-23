@@ -414,6 +414,7 @@ export const usageStatsApi = {
     const response = await axios.get<unknown>(
       `${base}/v0/management/usage/accounts`,
       {
+        params: { active_only: true },
         headers: { Authorization: `Bearer ${managementKey}` },
         timeout: USAGE_SERVICE_TIMEOUT_MS,
       },
