@@ -891,9 +891,7 @@ export function useUsageDashboard() {
     if (!data) return [];
 
     if (dataSource === 'postgres') {
-      const apiKeyData = data.byApiKey ?? [];
-      const accountData = data.byAccount ?? [];
-      const source = apiKeyData.length > 0 ? apiKeyData : accountData;
+      const source = data.byApiKey ?? [];
       const byModel = data.byModel ?? [];
       return source
         .filter((a) => a.requests > 0)
