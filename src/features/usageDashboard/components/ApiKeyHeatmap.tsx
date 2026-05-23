@@ -141,14 +141,14 @@ export function ApiKeyHeatmap({
       const tooltipHeight = tooltipRef.current?.offsetHeight ?? 60;
 
       let x = gridRect.left - cardRect.left + dotX - tooltipWidth / 2;
-      let y = gridTopInCard + dotY + DOT_SIZE + tooltipOffset;
+      let y = gridTopInCard + dotY - tooltipHeight - tooltipOffset;
 
       if (x < 0) x = 0;
       if (x + tooltipWidth > cardRect.width) x = cardRect.width - tooltipWidth;
 
-      if (y + tooltipHeight > cardRect.height) {
-        const flippedY = gridTopInCard + dotY - tooltipOffset - tooltipHeight;
-        if (flippedY >= 0) {
+      if (y < 0) {
+        const flippedY = gridTopInCard + dotY + DOT_SIZE + tooltipOffset;
+        if (flippedY + tooltipHeight <= cardRect.height) {
           y = flippedY;
         } else {
           y = Math.max(0, cardRect.height - tooltipHeight);
