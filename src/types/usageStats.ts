@@ -122,6 +122,7 @@ export interface ProviderRow {
   cachedTokens: number;
   cacheReadTokens: number;
   cacheCreationTokens: number;
+  childModels?: UsageStatsGroupRow[];
 }
 
 export interface ProvidersResponse {

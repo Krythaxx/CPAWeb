@@ -899,10 +899,38 @@ export function useUsageDashboard() {
         .filter((a) => a.requests > 0)
         .map((a) => {
           const base = buildApiKeyDisplayRow(a, byModel);
-          if (apiKeyModelDetails) {
-            const details = apiKeyModelDetails.get(a.key);
-            if (details && details.length > 0) {
-              const merged = mergeApiKeyModelRows(details, base.childModels);
+          if (apiKeyModelDetails && base.childModels.length === 0) {
+            const lookupKeys = [a.key];
+            if (a.key.startsWith('api-key/')) {
+              lookupKeys.push(a.key.slice('api-key/'.length));
+            } else {
+              lookupKeys.push(`api-key/${a.key}`);
+            }
+            if (a.authIndex) {
+              lookupKeys.push(`auth-index/${a.authIndex}`);
+            }
+            if (a.label && a.label !== a.key) {
+              lookupKeys.push(a.label);
+            }
+            const identity = getApiKeyAccountIdentity(a);
+            if (identity !== a.key) {
+              lookupKeys.push(identity);
+            }
+            const hashCandidate = readStringProp(a, ['apiKeyHash', 'api_key_hash', 'clientApiKeyHash', 'client_api_key_hash']);
+            if (hashCandidate) lookupKeys.push(hashCandidate);
+            const idCandidate = readStringProp(a, ['apiKeyIdentity', 'api_key_identity', 'clientApiKeyIdentity', 'client_api_key_identity']);
+            if (idCandidate) lookupKeys.push(idCandidate);
+
+            let matchedDetails: UsageStatsGroupRow[] | undefined;
+            for (const lk of lookupKeys) {
+              const found = apiKeyModelDetails.get(lk);
+              if (found && found.length > 0) {
+                matchedDetails = found;
+                break;
+              }
+            }
+            if (matchedDetails) {
+              const merged = mergeApiKeyModelRows(matchedDetails, base.childModels);
               return {
                 ...base,
                 childModels: merged,
@@ -912,10 +940,11 @@ export function useUsageDashboard() {
               };
             }
           }
-          if (base.childModels.length === 0 && a.provider) {
-            const providerModels = byModel.filter(
-              (m) => m.provider === a.provider && m.requests > 0
-            );
+          if (base.childModels.length === 0) {
+            const providerFilter = a.provider || undefined;
+            const providerModels = providerFilter
+              ? byModel.filter((m) => m.provider === providerFilter && m.requests > 0)
+              : byModel.filter((m) => m.requests > 0);
             if (providerModels.length > 0) {
               return {
                 ...base,
@@ -1053,17 +1082,27 @@ export function useUsageDashboard() {
     if (!data) return [];
 
     if (dataSource === 'postgres') {
-      return (postgresProviders ?? []).map((row) => ({
-        key: row.key,
-        label: row.label,
-        requests: row.requests,
-        successCount: row.successCount,
-        failureCount: row.failureCount,
-        totalTokens: row.totalTokens,
-        modelCount: 0,
-        cost: null,
-        childModels: [],
-      }));
+      return (postgresProviders ?? []).map((row) => {
+        const childModels = row.childModels && row.childModels.length > 0
+          ? row.childModels
+          : (data.byModel ?? []).filter(
+              (m) =>
+                (m.provider === row.label || m.key.startsWith(row.key + '/')) &&
+                m.requests > 0,
+            );
+        const childTotalTokens = childModels.reduce((sum, m) => sum + m.totalTokens, 0);
+        return {
+          key: row.key,
+          label: row.label,
+          requests: row.requests,
+          successCount: row.successCount,
+          failureCount: row.failureCount,
+          totalTokens: childTotalTokens > 0 ? childTotalTokens : row.totalTokens,
+          modelCount: new Set(childModels.map((m) => m.label)).size,
+          cost: null,
+          childModels,
+        };
+      });
     }
 
     const authFileOwnedModelKeys = new Set(

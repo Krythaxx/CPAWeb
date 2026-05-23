@@ -2343,21 +2343,38 @@ function normalizeAccountsResponse(raw: unknown): AccountsResponse {
   return { snapshotTime, accounts };
 }
 
+const API_KEY_DETAIL_LIST_KEYS = [
+  'details', 'data', 'items', 'apiKeys', 'api_keys', 'entries', 'results',
+];
+
 function normalizeApiKeyDetailsResponse(raw: unknown): Map<string, UsageStatsGroupRow[]> {
   const result = new Map<string, UsageStatsGroupRow[]>();
-  const record = toRecord(raw);
-  if (!record) {
+
+  let items: unknown[] | null = null;
+
+  if (Array.isArray(raw)) {
+    items = raw;
+  } else {
+    const record = toRecord(raw);
+    if (record) {
+      items = readKnownField(record, API_KEY_DETAIL_LIST_KEYS) as unknown[] | null;
+      if (!Array.isArray(items)) {
+        items = null;
+      }
+    }
+  }
+
+  if (!items) {
     return result;
   }
-  const rawDetails = record.details;
-  if (!Array.isArray(rawDetails)) {
-    return result;
-  }
-  for (const item of rawDetails) {
+
+  for (const item of items) {
     const r = toRecord(item);
     if (!r) continue;
     const key = readStringField(r, GROUP_KEY_KEYS) || 'unknown';
-    const childModels = normalizePersistentGroupRows(r.childModels ?? r.child_models);
+    const childModels = normalizePersistentGroupRows(
+      readKnownField(r, [...CHILD_MODEL_KEYS, ...MODEL_USAGE_KEYS])
+    );
     result.set(key, childModels);
   }
   return result;
