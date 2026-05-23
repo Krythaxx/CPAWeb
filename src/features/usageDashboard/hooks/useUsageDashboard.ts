@@ -190,6 +190,33 @@ function mergeMemoryUsageDetails(
   return Array.from(merged.values()).slice(-MAX_MEMORY_USAGE_DETAILS);
 }
 
+function smoothTrend(trend: TrendBucket[]): TrendBucket[] {
+  if (trend.length <= 2) return trend;
+  return trend.map((point, i) => {
+    if (i === 0) {
+      return { timestamp: point.timestamp, value: (trend[0].value + trend[1].value) / 2 };
+    }
+    if (i === trend.length - 1) {
+      return { timestamp: point.timestamp, value: (trend[i - 1].value + point.value) / 2 };
+    }
+    return {
+      timestamp: point.timestamp,
+      value: (trend[i - 1].value + point.value + trend[i + 1].value) / 3,
+    };
+  });
+}
+
+function getBucketWidthMinutes(trend: TrendBucket[]): number {
+  if (trend.length < 2) return 1;
+  const delta = Math.abs(trend[1].timestamp - trend[0].timestamp);
+  return Math.max(1, delta / 60000);
+}
+
+function toPerMinuteRate(trend: TrendBucket[], bucketMinutes: number): TrendBucket[] {
+  if (bucketMinutes <= 0) return trend;
+  return trend.map((p) => ({ timestamp: p.timestamp, value: p.value / bucketMinutes }));
+}
+
 function buildTwoPointTrend(start: number, end: number, value: number): TrendBucket[] {
   return [
     { timestamp: start, value: 0 },
@@ -235,10 +262,6 @@ function scaleTrendByTotal(
     timestamp: point.timestamp,
     value: point.value * ratio,
   }));
-}
-
-function zeroTrendFrom(trend: TrendBucket[] | undefined): TrendBucket[] | undefined {
-  return trend?.map((point) => ({ timestamp: point.timestamp, value: 0 }));
 }
 
 function selectMemoryUsageDetailsForStats(
@@ -1232,7 +1255,6 @@ export function useUsageDashboard() {
 
     if (data.source === 'postgres' && data.summary) {
       const s = data.summary;
-      const covered = deriveCoveredMinutes(data);
       const inputTrend =
         s.inputTrend ??
         s.inputOutputTrend ??
@@ -1241,18 +1263,20 @@ export function useUsageDashboard() {
         s.outputTrend ??
         s.cacheTrend ??
         scaleTrendByTotal(s.tokenTrend, s.outputTokens, s.totalTokens);
-      const tpmTrend = s.tokenTrend && covered && covered > 0 && s.tokenTrend.length > 0
-        ? s.tokenTrend.map((p) => ({
-            timestamp: p.timestamp,
-            value: p.value / (covered / s.tokenTrend!.length),
-          }))
-        : undefined;
+
+      const requestBuckets = s.requestTrend ?? [];
+      const tokenBuckets = s.tokenTrend ?? [];
+      const bucketMin = getBucketWidthMinutes(requestBuckets.length > 0 ? requestBuckets : tokenBuckets);
+
+      const rpmRaw = toPerMinuteRate(requestBuckets, bucketMin);
+      const tpmRaw = toPerMinuteRate(tokenBuckets, bucketMin);
+
       return {
-        totalTokens: s.tokenTrend,
-        inputTokens: inputTrend ?? zeroTrendFrom(outputTrend),
-        outputTokens: outputTrend,
-        rpm: s.requestTrend,
-        tpm: tpmTrend,
+        totalTokens: smoothTrend(tokenBuckets),
+        inputTokens: smoothTrend(inputTrend ?? tokenBuckets.map((p) => ({ ...p, value: 0 }))),
+        outputTokens: smoothTrend(outputTrend ?? tokenBuckets.map((p) => ({ ...p, value: 0 }))),
+        rpm: smoothTrend(rpmRaw),
+        tpm: smoothTrend(tpmRaw),
       };
     }
 
