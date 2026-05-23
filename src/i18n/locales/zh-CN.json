@@ -1539,7 +1539,7 @@
     "col_source": "来源",
     "col_type": "类型",
     "coverage_warning": "内存模式的热力图和 RPM 数据仅覆盖约 3.3 小时",
-    "memory_mode_notice": "当前为内存模式，展示累计数据，热力图和 RPM 仅覆盖近期",
+    "memory_mode_notice": "当前为内存模式，展示累计数据，热力图和 RPM 数据仅覆盖约 3.3 小时",
     "lifetime_totals": "（累计数据）"
   }
 }
