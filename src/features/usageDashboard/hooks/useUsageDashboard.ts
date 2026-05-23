@@ -29,7 +29,6 @@ import type {
   DataCoverageInfo,
   UsageStatsSummary,
   UsageStatsGroupRow,
-  AccountRow,
   ProviderRow,
 } from '@/types/usageStats';
 import {
@@ -589,7 +588,6 @@ export function useUsageDashboard() {
 
   const [dataCoverage, setDataCoverage] = useState<DataCoverageInfo | null>(null);
   const [postgresProviders, setPostgresProviders] = useState<ProviderRow[]>([]);
-  const [postgresAccounts, setPostgresAccounts] = useState<AccountRow[]>([]);
   const [apiKeyModelDetails, setApiKeyModelDetails] = useState<Map<string, UsageStatsGroupRow[]> | null>(null);
 
   const resetPostgresDetection = useCallback(() => {
@@ -633,10 +631,9 @@ export function useUsageDashboard() {
           if (persistentData?.summary) {
             postgresAvailableRef.current = true;
             const normalizedPersistentData = { ...persistentData, source: 'postgres' as const };
-            const [heatmapResult, providersResult, accountsResult, apiKeyDetailsResult] = await Promise.allSettled([
+            const [heatmapResult, providersResult, apiKeyDetailsResult] = await Promise.allSettled([
               usageStatsApi.fetchRequestHeatmap(serviceUrl, managementKey, range),
               usageStatsApi.fetchProviders(serviceUrl, managementKey, range),
-              usageStatsApi.fetchAccounts(serviceUrl, managementKey),
               usageStatsApi.fetchApiKeyDetails(serviceUrl, managementKey, range),
             ]);
             if (ac.signal.aborted) return;
@@ -652,9 +649,6 @@ export function useUsageDashboard() {
               providersResult.status === 'fulfilled'
                 ? providersResult.value.providers
                 : (normalizedPersistentData.byProvider ?? [])
-            );
-            setPostgresAccounts(
-              accountsResult.status === 'fulfilled' ? accountsResult.value.accounts : []
             );
             setHeatmapBuckets(
               heatmapResult.status === 'fulfilled'
@@ -1245,26 +1239,23 @@ export function useUsageDashboard() {
   }, [data, memoryDetailsSnapshot]);
 
   const sourceRows = useMemo<SourceDisplayRow[]>(() => {
-    if (dataSource === 'postgres' && postgresAccounts.length > 0) {
-      const auths = postgresAccounts.map((a) => ({
-        key: `auth:${a.key}`,
-        label: a.label || a.name || a.key,
-        sourceType: 'auth-file' as const,
-        provider: a.provider || '',
-        requests: a.success + a.failed,
-        successCount: a.success,
-        failureCount: a.failed,
-        totalTokens: 0,
-        modelCount: 0,
-        cost: null as number | null,
-        childModels: [] as UsageStatsGroupRow[],
-      }));
-      return [...auths, ...providerRows.map((r) => ({
-        ...r,
-        key: `prov:${r.key}`,
-        sourceType: 'provider' as const,
-        provider: '',
-      }))].sort((a, b) => b.requests - a.requests);
+    if (dataSource === 'postgres') {
+      return (postgresProviders ?? []).map((row) => {
+        const childModels = row.childModels ?? [];
+        return {
+          key: row.authIndex ? `auth:${row.key}` : `prov:${row.key}`,
+          label: row.label,
+          sourceType: (row.authIndex ? 'auth-file' : 'provider') as 'auth-file' | 'provider',
+          provider: row.authIndex ? (row.provider ?? '') : '',
+          requests: row.requests,
+          successCount: row.successCount,
+          failureCount: row.failureCount,
+          totalTokens: row.totalTokens,
+          modelCount: new Set(childModels.map((m) => m.label)).size,
+          cost: null as number | null,
+          childModels,
+        };
+      }).sort((a, b) => b.requests - a.requests);
     }
 
     const auths = authFileRows.map((r) => ({
@@ -1279,7 +1270,7 @@ export function useUsageDashboard() {
       provider: '',
     }));
     return [...auths, ...provs].sort((a, b) => b.requests - a.requests);
-  }, [authFileRows, providerRows, dataSource, postgresAccounts]);
+  }, [authFileRows, providerRows, dataSource, postgresProviders]);
 
   const metricTrends = useMemo<{
     totalTokens?: TrendBucket[];

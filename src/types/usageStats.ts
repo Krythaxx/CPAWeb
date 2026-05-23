@@ -111,6 +111,9 @@ export interface HeatmapResponse {
 export interface ProviderRow {
   key: string;
   label: string;
+  model?: string;
+  provider?: string;
+  authIndex?: string;
   requests: number;
   successCount: number;
   failureCount: number;
