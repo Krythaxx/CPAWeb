@@ -567,6 +567,7 @@ export function useUsageDashboard() {
   const [dataCoverage, setDataCoverage] = useState<DataCoverageInfo | null>(null);
   const [postgresProviders, setPostgresProviders] = useState<ProviderRow[]>([]);
   const [postgresAccounts, setPostgresAccounts] = useState<AccountRow[]>([]);
+  const [apiKeyModelDetails, setApiKeyModelDetails] = useState<Map<string, UsageStatsGroupRow[]> | null>(null);
 
   const resetPostgresDetection = useCallback(() => {
     postgresAvailableRef.current = null;
@@ -599,6 +600,7 @@ export function useUsageDashboard() {
 
     setLoading(true);
     setError(null);
+    setApiKeyModelDetails(null);
 
     try {
       if (postgresAvailableRef.current !== false) {
@@ -608,10 +610,11 @@ export function useUsageDashboard() {
           if (persistentData?.summary) {
             postgresAvailableRef.current = true;
             const normalizedPersistentData = { ...persistentData, source: 'postgres' as const };
-            const [heatmapResult, providersResult, accountsResult] = await Promise.allSettled([
+            const [heatmapResult, providersResult, accountsResult, apiKeyDetailsResult] = await Promise.allSettled([
               usageStatsApi.fetchRequestHeatmap(serviceUrl, managementKey, range),
               usageStatsApi.fetchProviders(serviceUrl, managementKey, range),
               usageStatsApi.fetchAccounts(serviceUrl, managementKey),
+              usageStatsApi.fetchApiKeyDetails(serviceUrl, managementKey, range),
             ]);
             if (ac.signal.aborted) return;
 
@@ -619,6 +622,9 @@ export function useUsageDashboard() {
             setData(normalizedPersistentData);
             setDataCoverage(null);
             setMergedRecentBuckets([]);
+            setApiKeyModelDetails(
+              apiKeyDetailsResult.status === 'fulfilled' ? apiKeyDetailsResult.value : null
+            );
             setPostgresProviders(
               providersResult.status === 'fulfilled'
                 ? providersResult.value.providers
@@ -867,7 +873,23 @@ export function useUsageDashboard() {
       const source = apiKeyData.length > 0 ? apiKeyData : accountData;
       return source
         .filter((a) => a.requests > 0)
-        .map((a) => buildApiKeyDisplayRow(a, data.byModel ?? []))
+        .map((a) => {
+          const base = buildApiKeyDisplayRow(a, data.byModel ?? []);
+          if (apiKeyModelDetails) {
+            const details = apiKeyModelDetails.get(a.key);
+            if (details && details.length > 0) {
+              const merged = mergeApiKeyModelRows(details, base.childModels);
+              return {
+                ...base,
+                childModels: merged,
+                modelCount: new Set(merged.map((m) => m.label)).size,
+                hasModelAttribution: merged.length > 0,
+                totalTokens: merged.reduce((sum, m) => sum + m.totalTokens, 0) || base.totalTokens,
+              };
+            }
+          }
+          return base;
+        })
         .sort((a, b) => b.requests - a.requests);
     }
 
@@ -960,7 +982,7 @@ export function useUsageDashboard() {
       .filter((a) => a.key.startsWith('api-key/') && a.requests > 0)
       .map((a) => buildApiKeyDisplayRow(a, data.byModel ?? []))
       .sort((a, b) => b.requests - a.requests);
-  }, [data, dataSource, memoryDetailsSnapshot]);
+  }, [data, dataSource, memoryDetailsSnapshot, apiKeyModelDetails]);
 
   const authFileRows = useMemo<AuthFileDisplayRow[]>(() => {
     if (!data) return [];

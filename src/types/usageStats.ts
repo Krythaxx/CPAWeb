@@ -152,6 +152,16 @@ export interface AccountsResponse {
   accounts: AccountRow[];
 }
 
+export interface ApiKeyDetailEntry {
+  key: string;
+  childModels: UsageStatsGroupRow[];
+}
+
+export interface ApiKeyDetailsResponse {
+  range: string;
+  details: ApiKeyDetailEntry[];
+}
+
 export interface PriceEntry {
   model: string;
   inputPricePerM: number;

@@ -421,6 +421,23 @@ export const usageStatsApi = {
     return normalizeAccountsResponse(response.data);
   },
 
+  async fetchApiKeyDetails(
+    serviceUrl: string,
+    managementKey: string,
+    range: DashboardTimeRange,
+  ): Promise<Map<string, UsageStatsGroupRow[]>> {
+    const base = resolveServiceUrl(serviceUrl);
+    const response = await axios.get<unknown>(
+      `${base}/v0/management/usage/api-key-details`,
+      {
+        params: { range },
+        headers: { Authorization: `Bearer ${managementKey}` },
+        timeout: USAGE_SERVICE_TIMEOUT_MS,
+      },
+    );
+    return normalizeApiKeyDetailsResponse(response.data);
+  },
+
   async fetchMemoryRequestLogDetails(maxRequestLogs = 50): Promise<MemoryRequestLogDetail[]> {
     const logs = await apiClient.get<{ lines?: string[] }>('/logs', {
       timeout: 15 * 1000,
@@ -2324,4 +2341,24 @@ function normalizeAccountsResponse(raw: unknown): AccountsResponse {
     }
   }
   return { snapshotTime, accounts };
+}
+
+function normalizeApiKeyDetailsResponse(raw: unknown): Map<string, UsageStatsGroupRow[]> {
+  const result = new Map<string, UsageStatsGroupRow[]>();
+  const record = toRecord(raw);
+  if (!record) {
+    return result;
+  }
+  const rawDetails = record.details;
+  if (!Array.isArray(rawDetails)) {
+    return result;
+  }
+  for (const item of rawDetails) {
+    const r = toRecord(item);
+    if (!r) continue;
+    const key = readStringField(r, GROUP_KEY_KEYS) || 'unknown';
+    const childModels = normalizePersistentGroupRows(r.childModels ?? r.child_models);
+    result.set(key, childModels);
+  }
+  return result;
 }
