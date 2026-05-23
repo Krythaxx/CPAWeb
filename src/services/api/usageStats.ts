@@ -1637,6 +1637,7 @@ function rangeToMinutes(r: DashboardTimeRange): number | null {
     }
     case 'yesterday': return 24 * 60;
     case '7d': return 7 * 24 * 60;
+    case '30d': return 30 * 24 * 60;
     case 'all': return null;
     default: return null;
   }
@@ -1659,6 +1660,7 @@ function rangeStartTimestamp(r: DashboardTimeRange): number | null {
       return end - 24 * 60 * 60 * 1000;
     }
     case '7d': return null;
+    case '30d': return null;
     case 'all': return null;
     default: return null;
   }
@@ -1679,7 +1681,7 @@ export function filterBucketsByRange(
   buckets: RecentRequestBucket[],
   r: DashboardTimeRange,
 ): { filtered: RecentRequestBucket[]; coverage: DataCoverageInfo } {
-  if (r === 'all' || r === '7d') {
+  if (r === 'all' || r === '7d' || r === '30d') {
     const covered = buckets.length * RECENT_REQUEST_BUCKET_DURATION_MINUTES;
     return {
       filtered: buckets,

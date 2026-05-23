@@ -1,6 +1,6 @@
 export type UsageStatsTimeRange = 'today' | '7d' | '30d' | 'all';
 
-export type DashboardTimeRange = '12h' | '24h' | 'today' | 'yesterday' | '7d' | 'all';
+export type DashboardTimeRange = '12h' | '24h' | 'today' | 'yesterday' | '7d' | '30d' | 'all';
 
 export interface UsageStatsSummary {
   totalRequests: number;

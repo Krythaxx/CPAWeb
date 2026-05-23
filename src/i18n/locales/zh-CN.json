@@ -1494,6 +1494,8 @@
   "usage_dashboard": {
     "range_today": "今天",
     "range_yesterday": "昨天",
+    "range_week": "周",
+    "range_month": "月",
     "range_all": "全部",
     "last_refresh": "最后刷新",
     "auto_refresh_off": "关闭",

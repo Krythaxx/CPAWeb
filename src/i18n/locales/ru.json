@@ -1491,6 +1491,8 @@
   "usage_dashboard": {
     "range_today": "Сегодня",
     "range_yesterday": "Вчера",
+    "range_week": "Неделя",
+    "range_month": "Месяц",
     "range_all": "Все",
     "last_refresh": "Последнее обновление",
     "auto_refresh_off": "Выкл",

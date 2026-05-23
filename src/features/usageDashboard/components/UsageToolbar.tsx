@@ -4,13 +4,14 @@ import { IconRefreshCw, IconDollarSign } from '@/components/ui/icons';
 import type { DashboardTimeRange } from '@/types/usageStats';
 import styles from './UsageToolbar.module.scss';
 
-const RANGES: { key: DashboardTimeRange; label: string }[] = [
-  { key: '12h', label: '12h' },
-  { key: '24h', label: '24h' },
-  { key: 'today', label: 'usage_dashboard.range_today' },
-  { key: 'yesterday', label: 'usage_dashboard.range_yesterday' },
-  { key: '7d', label: '7d' },
-  { key: 'all', label: 'usage_dashboard.range_all' },
+const RANGES: { key: DashboardTimeRange; label: string; translate: boolean }[] = [
+  { key: '12h', label: '12h', translate: false },
+  { key: '24h', label: '24h', translate: false },
+  { key: 'today', label: 'usage_dashboard.range_today', translate: true },
+  { key: 'yesterday', label: 'usage_dashboard.range_yesterday', translate: true },
+  { key: '7d', label: 'usage_dashboard.range_week', translate: true },
+  { key: '30d', label: 'usage_dashboard.range_month', translate: true },
+  { key: 'all', label: 'usage_dashboard.range_all', translate: true },
 ];
 
 const REFRESH_OPTIONS = [0, 3, 5, 10, 30];
@@ -50,9 +51,7 @@ export function UsageToolbar({
                 className={`${styles.rangeBtn}${range === r.key ? ` ${styles.rangeBtnActive}` : ''}`}
                 onClick={() => onRangeChange(r.key)}
               >
-                {r.key === 'today' || r.key === 'yesterday' || r.key === 'all'
-                  ? t(r.label)
-                  : r.label}
+                {r.translate ? t(r.label) : r.label}
               </button>
             ))}
           </div>

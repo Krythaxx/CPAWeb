@@ -1494,6 +1494,8 @@
   "usage_dashboard": {
     "range_today": "Today",
     "range_yesterday": "Yesterday",
+    "range_week": "Week",
+    "range_month": "Month",
     "range_all": "All",
     "last_refresh": "Last refresh",
     "auto_refresh_off": "Off",
