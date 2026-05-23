@@ -2043,6 +2043,21 @@ export function normalizeMemoryStats(
   };
 }
 
+const AUTH_FILE_PROVIDER_PREFIXES = ['codex-', 'claude-', 'gemini-', 'vertex-', 'openai-'];
+
+function authFileDisplayName(filename: string): string {
+  let name = filename.replace(/\.json$/i, '');
+  const lower = name.toLowerCase();
+  for (const prefix of AUTH_FILE_PROVIDER_PREFIXES) {
+    if (lower.startsWith(prefix)) {
+      name = name.slice(prefix.length);
+      break;
+    }
+  }
+  name = name.replace(/-[0-9a-f]{8}(?=@)/i, '');
+  return name;
+}
+
 export function buildMemoryProviders(
   payload: MemoryStatsPayload,
   config: ProviderConfigSnapshot,
@@ -2172,9 +2187,16 @@ export function buildMemoryProviders(
 
       const groupKey = authIndex ? `auth-index/${authIndex}/${providerKey}` : `provider/${providerKey}`;
       const configEntry = authIndex ? authIndexMap.get(authIndex) : undefined;
-      const label = configEntry?.prefix
-        ? maskApiKeyForDisplay(configEntry.prefix + '***')
-        : (authIndex ? `auth-index/${authIndex}` : providerKey);
+      const authFileEntry = authIndex ? authFileMap.get(authIndex) : undefined;
+      let label: string;
+      if (authFileEntry) {
+        const name = String(authFileEntry.name ?? '').trim();
+        label = authFileDisplayName(name) || stripJsonSuffix(name) || (authIndex ? `auth-index/${authIndex}` : providerKey);
+      } else if (configEntry?.prefix) {
+        label = maskApiKeyForDisplay(configEntry.prefix + '***');
+      } else {
+        label = authIndex ? `auth-index/${authIndex}` : providerKey;
+      }
 
       const group = getOrCreateGroup(groupKey, authIndex, providerKey, label, configEntry?.type ?? 'api-key');
 
@@ -2187,24 +2209,28 @@ export function buildMemoryProviders(
       group.cachedTokens += tokens.cachedTokens;
       group.totalTokens += tokenCountTotal(tokens);
 
-      const modelMap = new Map<string, { success: number; failure: number; tokens: ReturnType<typeof readAggregateTokenCounts> }>();
-      addModelRowsFromRecord(
-        modelMap as unknown as Map<string, UsageStatsGroupRow>,
-        providerKey,
-        rec,
-      );
-      for (const [modelKey, modelData] of modelMap) {
-        const modelRec = modelData as unknown as Record<string, unknown>;
-        const mSuccess = typeof modelRec.success === 'number' ? modelRec.success : (success || 0);
-        const mFailure = typeof modelRec.failure === 'number' ? modelRec.failure : (failure || 0);
-        const mTokens = readAggregateTokenCounts(modelRec);
-        addModelToGroup(group, modelKey, mSuccess, mFailure, {
-          inputTokens: mTokens.inputTokens || tokens.inputTokens,
-          outputTokens: mTokens.outputTokens || tokens.outputTokens,
-          reasoningTokens: mTokens.reasoningTokens || tokens.reasoningTokens,
-          cachedTokens: mTokens.cachedTokens || tokens.cachedTokens,
-          totalTokens: mTokens.totalTokens || tokenCountTotal(tokens),
+      const modelRowMap = new Map<string, UsageStatsGroupRow>();
+      addModelRowsFromRecord(modelRowMap, providerKey, rec);
+      for (const [, modelRow] of modelRowMap) {
+        addModelToGroup(group, modelRow.model || modelRow.label, modelRow.successCount, modelRow.failureCount, {
+          inputTokens: modelRow.inputTokens,
+          outputTokens: modelRow.outputTokens,
+          reasoningTokens: modelRow.reasoningTokens,
+          cachedTokens: modelRow.cachedTokens,
+          totalTokens: modelRow.totalTokens,
         });
+      }
+      if (modelRowMap.size === 0) {
+        const modelName = readModelName(rec);
+        if (modelName) {
+          addModelToGroup(group, modelName, success, failure, {
+            inputTokens: tokens.inputTokens,
+            outputTokens: tokens.outputTokens,
+            reasoningTokens: tokens.reasoningTokens,
+            cachedTokens: tokens.cachedTokens,
+            totalTokens: tokenCountTotal(tokens),
+          });
+        }
       }
     }
   }
@@ -2213,7 +2239,7 @@ export function buildMemoryProviders(
   const authFileLabels = authFileItems.map((file, index) => {
     const record = file as Record<string, unknown>;
     const name = String(file.name ?? '').trim();
-    const rawLabel = stripJsonSuffix(name || `auth-${index + 1}`);
+    const rawLabel = authFileDisplayName(name) || stripJsonSuffix(name || `auth-${index + 1}`);
     const rawAuthIndex = readKnownField(record, AUTH_INDEX_KEYS);
     const authIndexKey = normalizeRecentRequestAuthIndex(rawAuthIndex);
     const key = authIndexKey || name || `auth-${index}`;
@@ -2232,7 +2258,7 @@ export function buildMemoryProviders(
     const authIndex = normalizeRecentRequestAuthIndex(rawAuthIndex);
     const name = String(file.name ?? '').trim();
     const key = authIndex || name;
-    const label = labelMap.get(key) ?? stripJsonSuffix(name);
+    const label = labelMap.get(key) ?? (authFileDisplayName(name) || stripJsonSuffix(name));
 
     const groupKey = authIndex ? `auth-index/${authIndex}/${providerKey}` : `auth-file/${key}`;
     const group = getOrCreateGroup(groupKey, authIndex ?? '', providerKey, label, 'auth-file');
