@@ -762,13 +762,21 @@ async function responseDataToText(data: unknown): Promise<string> {
 function readTextValueFromLog(text: string, keys: string[]): string {
   for (const key of keys) {
     const escaped = escapeRegExp(key);
-    const pattern = new RegExp(
+    const quotedPattern = new RegExp(
       `(?:["']${escaped}["']|\\b${escaped}\\b)\\s*[:=]\\s*["']([^"'\\n\\r]+)["']`,
       'i'
     );
-    const match = text.match(pattern);
-    if (match?.[1]?.trim()) {
-      return match[1].trim();
+    const quotedMatch = text.match(quotedPattern);
+    if (quotedMatch?.[1]?.trim()) {
+      return quotedMatch[1].trim();
+    }
+    const unquotedPattern = new RegExp(
+      `(?:["']${escaped}["']|\\b${escaped}\\b)\\s*[:=]\\s*([^"'\\s,}\\]]+)`,
+      'i'
+    );
+    const unquotedMatch = text.match(unquotedPattern);
+    if (unquotedMatch?.[1]?.trim()) {
+      return unquotedMatch[1].trim();
     }
   }
 
@@ -833,10 +841,32 @@ function parseMemoryRequestLogDetail(
   text: string,
   candidate: RequestLogCandidate
 ): MemoryRequestLogDetail | null {
-  const tokens = readTokenCountsFromLog(text);
-  const model = readTextValueFromLog(text, SINGLE_MODEL_KEYS);
-  const provider = normalizeProviderKey(readTextValueFromLog(text, PROVIDER_LOG_KEYS), '');
-  const authIndex = normalizeRecentRequestAuthIndex(readTextValueFromLog(text, AUTH_INDEX_KEYS));
+  let provider = '';
+  let model = '';
+  let authIndex: string | undefined;
+  let tokens: TokenCounts = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cachedTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, totalTokens: 0 };
+
+  try {
+    const json = JSON.parse(text);
+    if (json && typeof json === 'object') {
+      const rec = json as Record<string, unknown>;
+      provider = normalizeProviderKey(String(readKnownField(rec, PROVIDER_LOG_KEYS) ?? ''), '');
+      const rawModel = readKnownField(rec, SINGLE_MODEL_KEYS);
+      model = (rawModel != null && String(rawModel) !== 'undefined') ? String(rawModel) : readTextValueFromLog(text, SINGLE_MODEL_KEYS);
+      const rawAuthIndex = readKnownField(rec, AUTH_INDEX_KEYS);
+      authIndex = normalizeRecentRequestAuthIndex(rawAuthIndex) ?? undefined;
+      tokens = readTokenCounts(rec);
+      if (tokenCountTotal(tokens) <= 0) {
+        tokens = readTokenCountsFromLog(text);
+      }
+    }
+  } catch {
+    tokens = readTokenCountsFromLog(text);
+    model = readTextValueFromLog(text, SINGLE_MODEL_KEYS);
+    provider = normalizeProviderKey(readTextValueFromLog(text, PROVIDER_LOG_KEYS), '');
+    authIndex = normalizeRecentRequestAuthIndex(readTextValueFromLog(text, AUTH_INDEX_KEYS)) ?? undefined;
+  }
+
   const statusCode = extractStatusCode(text);
   const success = statusCode == null ? candidate.success : statusCode < 400;
 
