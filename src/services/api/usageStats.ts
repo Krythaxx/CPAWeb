@@ -250,6 +250,7 @@ export interface MemoryRequestLogDetail {
   timestamp?: string;
   provider?: string;
   model?: string;
+  authIndex?: string;
   apiKey?: string;
   success: boolean;
   tokens: TokenCounts;
@@ -835,6 +836,7 @@ function parseMemoryRequestLogDetail(
   const tokens = readTokenCountsFromLog(text);
   const model = readTextValueFromLog(text, SINGLE_MODEL_KEYS);
   const provider = normalizeProviderKey(readTextValueFromLog(text, PROVIDER_LOG_KEYS), '');
+  const authIndex = normalizeRecentRequestAuthIndex(readTextValueFromLog(text, AUTH_INDEX_KEYS));
   const statusCode = extractStatusCode(text);
   const success = statusCode == null ? candidate.success : statusCode < 400;
 
@@ -846,6 +848,7 @@ function parseMemoryRequestLogDetail(
     id: candidate.id,
     ...(provider ? { provider } : {}),
     ...(model ? { model } : {}),
+    ...(authIndex ? { authIndex } : {}),
     success,
     tokens,
   };

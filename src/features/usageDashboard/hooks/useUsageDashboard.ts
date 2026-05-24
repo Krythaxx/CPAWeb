@@ -1211,8 +1211,74 @@ export function useUsageDashboard() {
           }
         : null;
 
+      const authFileModelMap = dataSource === 'memory' && memoryDetailsSnapshot.length > 0
+        ? (() => {
+            const m = new Map<string, Map<string, {
+              requests: number;
+              successCount: number;
+              failureCount: number;
+              inputTokens: number;
+              outputTokens: number;
+              reasoningTokens: number;
+              cachedTokens: number;
+              totalTokens: number;
+            }>>();
+            for (const detail of memoryDetailsSnapshot) {
+              if (!detail.authIndex && !detail.provider) continue;
+              const groupKey = detail.authIndex
+                ? `${detail.authIndex}/${detail.provider ?? ''}`
+                : `provider/${detail.provider ?? ''}`;
+              let models = m.get(groupKey);
+              if (!models) {
+                models = new Map();
+                m.set(groupKey, models);
+              }
+              const modelName = detail.model || 'unknown';
+              let entry = models.get(modelName);
+              if (!entry) {
+                entry = { requests: 0, successCount: 0, failureCount: 0, inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cachedTokens: 0, totalTokens: 0 };
+                models.set(modelName, entry);
+              }
+              entry.requests++;
+              if (detail.success) { entry.successCount++; } else { entry.failureCount++; }
+              entry.inputTokens += detail.tokens.inputTokens;
+              entry.outputTokens += detail.tokens.outputTokens;
+              entry.reasoningTokens += detail.tokens.reasoningTokens;
+              entry.cachedTokens += detail.tokens.cachedTokens;
+              entry.totalTokens += tokenCountTotal(detail.tokens);
+            }
+            return m;
+          })()
+        : null;
+
       return providers.map((row) => {
         let childModels = row.childModels ?? [];
+
+        if (childModels.length === 0 && authFileModelMap && row.authIndex) {
+          const groupKey = `${row.authIndex}/${row.provider ?? ''}`;
+          const models = authFileModelMap.get(groupKey);
+          if (models && models.size > 0) {
+            childModels = Array.from(models.entries())
+              .map(([modelName, ms]) => ({
+                key: `${row.provider}/${modelName}`,
+                label: modelName,
+                model: modelName,
+                provider: row.provider ?? '',
+                requests: ms.requests,
+                successCount: ms.successCount,
+                failureCount: ms.failureCount,
+                successRate: ms.requests > 0 ? ms.successCount / ms.requests : 0,
+                inputTokens: ms.inputTokens,
+                outputTokens: ms.outputTokens,
+                reasoningTokens: ms.reasoningTokens,
+                cachedTokens: ms.cachedTokens,
+                cacheReadTokens: 0,
+                cacheCreationTokens: 0,
+                totalTokens: ms.totalTokens,
+              }))
+              .sort((a, b) => b.requests - a.requests);
+          }
+        }
 
         if (childModels.length === 0 && findEnrichedModels) {
           const enriched = findEnrichedModels(row);
@@ -1239,7 +1305,7 @@ export function useUsageDashboard() {
     }
 
     return [];
-  }, [dataSource, postgresProviders, memoryProviders, providerRows]);
+  }, [dataSource, postgresProviders, memoryProviders, providerRows, memoryDetailsSnapshot]);
 
   const metricTrends = useMemo<{
     totalTokens?: TrendBucket[];
