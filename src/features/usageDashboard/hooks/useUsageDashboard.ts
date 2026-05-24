@@ -1213,6 +1213,18 @@ export function useUsageDashboard() {
 
       const authFileModelMap = dataSource === 'memory' && memoryDetailsSnapshot.length > 0
         ? (() => {
+            const providerAuthIndexes = new Map<string, string[]>();
+            for (const row of providers) {
+              if (!row.authIndex) continue;
+              const p = (row.provider ?? '').toLowerCase();
+              let list = providerAuthIndexes.get(p);
+              if (!list) {
+                list = [];
+                providerAuthIndexes.set(p, list);
+              }
+              list.push(row.authIndex);
+            }
+
             const m = new Map<string, Map<string, {
               requests: number;
               successCount: number;
@@ -1225,9 +1237,20 @@ export function useUsageDashboard() {
             }>>();
             for (const detail of memoryDetailsSnapshot) {
               if (!detail.authIndex && !detail.provider) continue;
-              const groupKey = detail.authIndex
-                ? `${detail.authIndex}/${detail.provider ?? ''}`
-                : `provider/${detail.provider ?? ''}`;
+
+              let groupKey: string;
+              if (detail.authIndex) {
+                groupKey = `${detail.authIndex}/${detail.provider ?? ''}`;
+              } else {
+                const p = (detail.provider ?? '').toLowerCase();
+                const indexes = providerAuthIndexes.get(p);
+                if (indexes && indexes.length === 1) {
+                  groupKey = `${indexes[0]}/${detail.provider ?? ''}`;
+                } else {
+                  continue;
+                }
+              }
+
               let models = m.get(groupKey);
               if (!models) {
                 models = new Map();

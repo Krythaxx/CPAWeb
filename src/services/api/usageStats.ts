@@ -1169,9 +1169,9 @@ function parseMemoryUsageQueueDetail(value: unknown): MemoryRequestLogDetail | n
 
   const tokens = readAggregateTokenCounts(record);
   const model =
-    readUsageQueueTextField(record, SINGLE_MODEL_KEYS) ||
-    readUsageQueueTextField(record, ['alias']);
-  const provider = normalizeProviderKey(readUsageQueueTextField(record, PROVIDER_LOG_KEYS), '');
+    readUsageQueueTextFieldDeep(record, SINGLE_MODEL_KEYS) ||
+    readUsageQueueTextFieldDeep(record, ['alias']);
+  const provider = normalizeProviderKey(readUsageQueueTextFieldDeep(record, PROVIDER_LOG_KEYS), '');
   const rawAuthIndex = readUsageQueueTextFieldDeep(record, AUTH_INDEX_KEYS);
   const authIndex = normalizeRecentRequestAuthIndex(rawAuthIndex);
 
@@ -1179,9 +1179,9 @@ function parseMemoryUsageQueueDetail(value: unknown): MemoryRequestLogDetail | n
     return null;
   }
 
-  const id = readUsageQueueTextField(record, ['request_id', 'requestId', 'id']);
-  const timestamp = readUsageQueueTextField(record, ['timestamp', 'time', 'created_at', 'createdAt']);
-  const apiKey = readUsageQueueTextField(record, ['api_key', 'apiKey']);
+  const id = readUsageQueueTextFieldDeep(record, ['request_id', 'requestId', 'id', 'trace_id', 'traceId']);
+  const timestamp = readUsageQueueTextFieldDeep(record, ['timestamp', 'time', 'created_at', 'createdAt']);
+  const apiKey = readUsageQueueTextFieldDeep(record, ['api_key', 'apiKey', 'client_api_key', 'clientApiKey', 'key']);
 
   return {
     ...(id ? { id } : {}),
