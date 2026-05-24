@@ -15,6 +15,7 @@ import type { AuthFileItem } from '@/types';
 import type { CodexQuotaState } from '@/types/quota';
 import { isCodexFile, resolveAuthProvider } from '@/utils/quota';
 import { useQuotaStore } from '@/stores/useQuotaStore';
+import type { AuthFileQuotaEntry } from '@/services/api/usageStats';
 import {
   normalizeRecentRequestAuthIndex,
   normalizeRecentRequestBuckets,
@@ -51,6 +52,7 @@ export type AuthFileCardProps = {
   statusUpdating: Record<string, boolean>;
   quotaFilterType: QuotaProviderType | null;
   statusBarCache: Map<string, AuthFileStatusBarData>;
+  cachedQuotas: Map<string, AuthFileQuotaEntry>;
   onShowModels: (file: AuthFileItem) => void;
   onDownload: (name: string) => void;
   onOpenPrefixProxyEditor: (file: AuthFileItem) => void;
@@ -77,6 +79,7 @@ export function AuthFileCard(props: AuthFileCardProps) {
     statusUpdating,
     quotaFilterType,
     statusBarCache,
+    cachedQuotas,
     onShowModels,
     onDownload,
     onOpenPrefixProxyEditor,
@@ -97,10 +100,12 @@ export function AuthFileCard(props: AuthFileCardProps) {
   const codexQuota = useQuotaStore((s) =>
     isCodexFile(file) ? (s.codexQuota[file.name] as CodexQuotaState | undefined) : undefined
   );
-  const weeklyResetLabel =
+  const liveLabel =
     codexQuota?.status === 'success' && codexQuota.windows.length > 0
       ? (codexQuota.windows.find((w) => w.id.includes('weekly'))?.resetLabel ?? '')
       : '';
+  const cachedLabel = cachedQuotas.get(file.name)?.resetTime || '';
+  const weeklyResetLabel = liveLabel || cachedLabel;
   const showModelsButton = !isRuntimeOnly || isAistudio;
   const typeColor = getTypeColor(providerKey, resolvedTheme);
   const typeLabel = getTypeLabel(t, providerKey);

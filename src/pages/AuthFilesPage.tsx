@@ -58,7 +58,30 @@ import {
   type AuthFilesSortMode,
 } from '@/features/authFiles/uiState';
 import { useAuthStore, useNotificationStore, useThemeStore } from '@/stores';
+import { usageStatsApi, type AuthFileQuotaEntry } from '@/services/api/usageStats';
 import styles from './AuthFilesPage.module.scss';
+
+const SERVICE_URL_STORAGE_KEY = 'cli-proxy-usage-service-url';
+const USAGE_SERVICE_PORT = '18317';
+
+function deriveDefaultServiceUrl(apiBase: string): string {
+  try {
+    const base = apiBase.replace(/\/+$/, '');
+    const url = new URL(base.startsWith('http') ? base : `http://${base}`);
+    if (url.protocol !== 'https:') {
+      url.port = USAGE_SERVICE_PORT;
+    }
+    return url.origin;
+  } catch {
+    return `http://localhost:${USAGE_SERVICE_PORT}`;
+  }
+}
+
+function loadServiceUrl(apiBase: string): string {
+  const stored = localStorage.getItem(SERVICE_URL_STORAGE_KEY);
+  if (stored) return stored;
+  return deriveDefaultServiceUrl(apiBase);
+}
 
 const easePower3Out = (progress: number) => 1 - (1 - progress) ** 4;
 const easePower2In = (progress: number) => progress ** 3;
@@ -134,6 +157,25 @@ export function AuthFilesPage() {
   } = useAuthFilesData();
 
   const statusBarCache = useAuthFilesStatusBarCache(files);
+
+  const apiBase = useAuthStore((s) => s.apiBase);
+  const managementKey = useAuthStore((s) => s.managementKey);
+  const [cachedQuotas, setCachedQuotas] = useState<Map<string, AuthFileQuotaEntry>>(new Map());
+
+  useEffect(() => {
+    const serviceUrl = apiBase ? loadServiceUrl(apiBase) : '';
+    if (!serviceUrl || !managementKey) return;
+    let cancelled = false;
+    void usageStatsApi.fetchAuthFileQuotas(serviceUrl, managementKey).then((entries) => {
+      if (cancelled) return;
+      const map = new Map<string, AuthFileQuotaEntry>();
+      for (const entry of entries) {
+        map.set(entry.authFileName, entry);
+      }
+      setCachedQuotas(map);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [apiBase, managementKey]);
 
   const {
     excluded,
@@ -832,6 +874,7 @@ export function AuthFilesPage() {
                     statusUpdating={statusUpdating}
                     quotaFilterType={quotaFilterType}
                     statusBarCache={statusBarCache}
+                    cachedQuotas={cachedQuotas}
                     onShowModels={showModels}
                     onDownload={handleDownload}
                     onOpenPrefixProxyEditor={openPrefixProxyEditor}
