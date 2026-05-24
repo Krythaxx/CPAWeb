@@ -1213,7 +1213,7 @@ export function useUsageDashboard() {
       return providers.map((row) => {
         let childModels = row.childModels ?? [];
 
-        if (findEnrichedModels) {
+        if (childModels.length === 0 && findEnrichedModels) {
           const enriched = findEnrichedModels(row);
           if (enriched) {
             childModels = enriched;
