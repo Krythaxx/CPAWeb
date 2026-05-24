@@ -261,6 +261,7 @@ export interface ProviderConfigEntry {
   type: string;
   name: string;
   prefix: string;
+  baseUrl: string;
   apiKey: string;
 }
 
@@ -573,14 +574,19 @@ export const usageStatsApi = {
     };
 
     const addConfigEntry = (provider: string, type: string, r: Record<string, unknown>) => {
-      const authIndex = readAuthIndex(r);
-      if (!authIndex) return;
+      let authIndex = readAuthIndex(r);
+      if (!authIndex) {
+        const apiKey = String(r['api-key'] ?? r.apiKey ?? '');
+        const prefix = String(r.prefix ?? '');
+        authIndex = `${provider}:${prefix || apiKey.slice(0, 8) || entries.length}`;
+      }
       entries.push({
         authIndex,
         provider: provider.toLowerCase(),
         type,
         name: String(r.name ?? type),
         prefix: String(r.prefix ?? ''),
+        baseUrl: String(r['base-url'] ?? r.baseUrl ?? r.base_url ?? ''),
         apiKey: String(r['api-key'] ?? r.apiKey ?? ''),
       });
     };
@@ -608,17 +614,17 @@ export const usageStatsApi = {
         if (!isRecord(item)) continue;
         const prov = item as Record<string, unknown>;
         const providerName = String(prov.name ?? 'openai-compat').toLowerCase();
-        const provAuthIndex = readAuthIndex(prov);
-        if (provAuthIndex) {
-          entries.push({
-            authIndex: provAuthIndex,
-            provider: providerName,
-            type: 'openai-compatibility',
-            name: String(prov.name ?? 'openai-compat'),
-            prefix: String(prov.prefix ?? ''),
-            apiKey: '',
-          });
-        }
+        const provAuthIndex = readAuthIndex(prov) || `${providerName}:${entries.length}`;
+        const provBaseUrl = String(prov['base-url'] ?? prov.baseUrl ?? prov.base_url ?? '');
+        entries.push({
+          authIndex: provAuthIndex,
+          provider: providerName,
+          type: 'openai-compatibility',
+          name: String(prov.name ?? 'openai-compat'),
+          prefix: String(prov.prefix ?? ''),
+          baseUrl: provBaseUrl,
+          apiKey: '',
+        });
         const apiEntries = prov['api-key-entries'] ?? prov.apiKeyEntries;
         if (Array.isArray(apiEntries)) {
           for (const entry of apiEntries) {
@@ -631,6 +637,7 @@ export const usageStatsApi = {
                 type: 'openai-compatibility',
                 name: String(prov.name ?? 'openai-compat'),
                 prefix: String(prov.prefix ?? ''),
+                baseUrl: provBaseUrl,
                 apiKey: String((entry as Record<string, unknown>)['api-key'] ?? ''),
               });
             }
@@ -2115,6 +2122,43 @@ function authFileDisplayName(filename: string): string {
   return name;
 }
 
+function baseURLDisplayName(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+
+  let parseValue = trimmed;
+  if (!parseValue.includes('://')) {
+    parseValue = '//' + parseValue;
+  }
+
+  let hostPort = '';
+  try {
+    const parsed = new URL(parseValue);
+    hostPort = parsed.host;
+  } catch {
+    hostPort = trimmed.split('/')[0];
+  }
+  if (!hostPort) return trimmed;
+
+  let host = hostPort;
+  let port = '';
+  const colonIdx = hostPort.lastIndexOf(':');
+  if (colonIdx > 0) {
+    const possiblePort = hostPort.slice(colonIdx + 1);
+    if (/^\d+$/.test(possiblePort)) {
+      host = hostPort.slice(0, colonIdx);
+      port = ':' + possiblePort;
+    }
+  }
+
+  const parts = host.split('.');
+  if (parts.length === 4 && parts.every((p) => /^\d{1,3}$/.test(p))) {
+    return parts[0] + '.***.' + parts[3] + port;
+  }
+
+  return hostPort;
+}
+
 export function buildMemoryProviders(
   payload: MemoryStatsPayload,
   config: ProviderConfigSnapshot,
@@ -2156,13 +2200,17 @@ export function buildMemoryProviders(
   }
 
   const resolveLabel = (authIndex: string, providerKey: string, configEntry: ProviderConfigEntry | undefined): string => {
+    if (configEntry?.prefix) {
+      return configEntry.prefix;
+    }
+    if (configEntry?.baseUrl) {
+      const display = baseURLDisplayName(configEntry.baseUrl);
+      if (display) return display;
+    }
     const authFileEntry = authIndex ? authFileMap.get(authIndex) : undefined;
     if (authFileEntry) {
       const name = String(authFileEntry.name ?? '').trim();
       return authFileDisplayName(name) || stripJsonSuffix(name) || (authIndex ? `auth-index/${authIndex}` : providerKey);
-    }
-    if (configEntry?.prefix) {
-      return maskApiKeyForDisplay(configEntry.prefix + '***');
     }
     if (configEntry?.name && configEntry.name !== configEntry.type) {
       return configEntry.name;
