@@ -1196,8 +1196,31 @@ export function useUsageDashboard() {
   const sourceRows = useMemo<SourceDisplayRow[]>(() => {
     const providers = dataSource === 'postgres' ? postgresProviders : memoryProviders;
     if (providers.length > 0) {
+      const findEnrichedModels = dataSource === 'memory' && providerRows.length > 0
+        ? (row: ProviderRow): UsageStatsGroupRow[] | null => {
+            const byKey = providerRows.find((pr) => pr.key === row.key);
+            if (byKey && byKey.childModels.length > 0) return byKey.childModels;
+            const byProvider = providerRows.find(
+              (pr) => row.provider && (pr.key === row.provider || pr.label.toLowerCase() === row.provider.toLowerCase()),
+            );
+            if (byProvider && byProvider.childModels.length > 0) return byProvider.childModels;
+            const byLabel = providerRows.find((pr) => pr.label === row.label);
+            if (byLabel && byLabel.childModels.length > 0) return byLabel.childModels;
+            return null;
+          }
+        : null;
+
       return providers.map((row) => {
-        const childModels = row.childModels ?? [];
+        let childModels = row.childModels ?? [];
+
+        if (findEnrichedModels) {
+          const enriched = findEnrichedModels(row);
+          if (enriched) {
+            childModels = enriched;
+          }
+        }
+
+        const tokenSum = childModels.reduce((s, m) => s + m.totalTokens, 0);
         return {
           key: row.authIndex ? `auth:${row.key}` : `prov:${row.key}`,
           label: row.label,
@@ -1206,7 +1229,7 @@ export function useUsageDashboard() {
           requests: row.requests,
           successCount: row.successCount,
           failureCount: row.failureCount,
-          totalTokens: row.totalTokens,
+          totalTokens: tokenSum > 0 ? tokenSum : row.totalTokens,
           modelCount: new Set(childModels.map((m) => m.label)).size,
           cost: null as number | null,
           childModels,
@@ -1215,7 +1238,7 @@ export function useUsageDashboard() {
     }
 
     return [];
-  }, [dataSource, postgresProviders, memoryProviders]);
+  }, [dataSource, postgresProviders, memoryProviders, providerRows]);
 
   const metricTrends = useMemo<{
     totalTokens?: TrendBucket[];
