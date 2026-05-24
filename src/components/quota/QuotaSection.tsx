@@ -83,8 +83,10 @@ const useQuotaPagination = <T,>(items: T[], defaultPageSize = 6): QuotaPaginatio
   }, [items, currentPage, pageSize]);
 
   const setPageSize = useCallback((size: number) => {
-    setPageSizeState(size);
-    setPage(1);
+    setPageSizeState((prev) => {
+      if (prev === size) return prev;
+      return size;
+    });
   }, []);
 
   const goToPrev = useCallback(() => {
@@ -183,7 +185,6 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
     if (effectiveViewMode === 'all') {
       setPageSize(Math.max(1, filteredFiles.length));
     } else {
-      // Paged mode: 3 rows * columns, capped to avoid oversized pages.
       setPageSize(Math.min(columns * 3, MAX_ITEMS_PER_PAGE));
     }
   }, [effectiveViewMode, columns, filteredFiles.length, setPageSize]);
