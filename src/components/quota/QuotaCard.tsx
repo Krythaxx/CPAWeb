@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import type { ReactElement, ReactNode } from 'react';
 import type { TFunction } from 'i18next';
 import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
+import { IconRefreshCw } from '@/components/ui/icons';
 import type { AuthFileItem, ResolvedTheme, ThemeColors } from '@/types';
 import { TYPE_COLORS } from '@/utils/quota';
 import styles from '@/pages/QuotaPage.module.scss';
@@ -100,6 +101,22 @@ export function QuotaCard<TState extends QuotaStatusState>({
     quota?.error || t('common.unknown_error')
   );
   const idleMessageKey = onRefresh ? `${i18nPrefix}.idle` : (cardIdleMessageKey ?? `${i18nPrefix}.idle`);
+  const hasRefreshControl = Boolean(onRefresh);
+  const hasStatusToggleControl = Boolean(onToggleStatus);
+  const refreshControl = onRefresh ? (
+    <button
+      type="button"
+      className={`${styles.quotaRefreshButton} ${
+        hasStatusToggleControl ? styles.quotaRefreshButtonBeforeToggle : ''
+      }`}
+      onClick={onRefresh}
+      disabled={!canRefresh || quotaStatus === 'loading'}
+      title={t(idleMessageKey)}
+      aria-label={t(idleMessageKey)}
+    >
+      <IconRefreshCw size={13} />
+    </button>
+  ) : null;
   const statusToggleControl = onToggleStatus ? (
     <div className={styles.quotaStatusToggle}>
       <ToggleSwitch
@@ -110,6 +127,7 @@ export function QuotaCard<TState extends QuotaStatusState>({
       />
     </div>
   ) : null;
+  const hasQuotaControls = hasRefreshControl || hasStatusToggleControl;
 
   const getTypeLabel = (type: string): string => {
     const key = `auth_files.filter_${type}`;
@@ -136,8 +154,13 @@ export function QuotaCard<TState extends QuotaStatusState>({
       </div>
 
       <div
-        className={`${styles.quotaSection} ${statusToggleControl ? styles.quotaSectionWithToggle : ''}`}
+        className={`${styles.quotaSection} ${
+          hasQuotaControls ? styles.quotaSectionWithControls : ''
+        } ${
+          hasRefreshControl && hasStatusToggleControl ? styles.quotaSectionWithRefreshAndToggle : ''
+        }`}
       >
+        {refreshControl}
         {statusToggleControl}
         {quotaStatus === 'loading' ? (
           <div className={styles.quotaMessage}>{t(`${i18nPrefix}.loading`)}</div>

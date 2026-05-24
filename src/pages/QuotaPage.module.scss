@@ -283,7 +283,7 @@
   border-top: 1px dashed var(--border-color);
 }
 
-.quotaSectionWithToggle {
+.quotaSectionWithControls {
   min-height: 24px;
 
   .codexPlan,
@@ -293,6 +293,58 @@
   .quotaWarning {
     padding-right: 34px;
   }
+}
+
+.quotaSectionWithRefreshAndToggle {
+  .codexPlan,
+  .quotaRowHeader,
+  .quotaMessage,
+  .quotaError,
+  .quotaWarning {
+    padding-right: 64px;
+  }
+}
+
+.quotaRefreshButton {
+  position: absolute;
+  top: $spacing-xs;
+  right: $spacing-sm;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
+  border-radius: $radius-full;
+  background: color-mix(in srgb, var(--bg-primary) 86%, transparent);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition:
+    background-color $transition-fast,
+    border-color $transition-fast,
+    color $transition-fast,
+    opacity $transition-fast;
+
+  svg {
+    display: block;
+  }
+
+  &:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--primary-color) 12%, var(--bg-secondary));
+    border-color: color-mix(in srgb, var(--primary-color) 28%, var(--border-color));
+    color: var(--text-primary);
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+}
+
+.quotaRefreshButtonBeforeToggle {
+  right: 34px;
 }
 
 .quotaStatusToggle {
@@ -399,6 +451,7 @@
 
 .quotaMessageAction {
   width: 100%;
+  box-sizing: border-box;
   border: none;
   background: none;
   cursor: pointer;
