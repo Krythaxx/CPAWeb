@@ -1200,6 +1200,7 @@ export function useUsageDashboard() {
         ? (row: ProviderRow): UsageStatsGroupRow[] | null => {
             const byKey = providerRows.find((pr) => pr.key === row.key);
             if (byKey && byKey.childModels.length > 0) return byKey.childModels;
+            if (row.authIndex) return null;
             const byProvider = providerRows.find(
               (pr) => row.provider && (pr.key === row.provider || pr.label.toLowerCase() === row.provider.toLowerCase()),
             );
