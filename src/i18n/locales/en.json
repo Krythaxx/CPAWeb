@@ -621,7 +621,8 @@
     "prefix_proxy_html_challenge": "Downloaded content is an HTML challenge page, not an auth JSON object. Re-authenticate or replace this auth file before editing fields.",
     "prefix_proxy_saved_success": "Updated auth file \"{{name}}\" successfully",
     "quota_refresh_success": "Quota refreshed for \"{{name}}\"",
-    "quota_refresh_failed": "Failed to refresh quota for \"{{name}}\": {{message}}"
+    "quota_refresh_failed": "Failed to refresh quota for \"{{name}}\": {{message}}",
+    "weekly_reset_label": "Weekly Reset: "
   },
   "antigravity_quota": {
     "title": "Antigravity Quota",

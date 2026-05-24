@@ -618,7 +618,8 @@
     "quota_refresh_single": "Обновить квоту",
     "quota_refresh_hint": "Обновить квоту только для этих учётных данных",
     "quota_refresh_success": "Квота для \"{{name}}\" обновлена",
-    "quota_refresh_failed": "Не удалось обновить квоту для \"{{name}}\": {{message}}"
+    "quota_refresh_failed": "Не удалось обновить квоту для \"{{name}}\": {{message}}",
+    "weekly_reset_label": "Еженед. сброс: "
   },
   "antigravity_quota": {
     "title": "Квота Antigravity",
