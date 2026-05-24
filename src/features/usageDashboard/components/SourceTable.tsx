@@ -81,7 +81,7 @@ export function SourceTable({ rows, priceTable }: SourceTableProps) {
     <div className={styles.wrapper}>
       <div className={styles.header}>
         <span className={styles.headerTitle}>{t('usage_dashboard.source_usage')}</span>
-        <span className={styles.headerHint}>{t('usage_dashboard.click_expand_hint')}</span>
+
       </div>
       <div className={styles.scroll}>
         <table className={styles.table}>

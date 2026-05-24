@@ -79,7 +79,7 @@ export function ApiKeyTable({ rows, priceTable }: ApiKeyTableProps) {
     <div className={styles.wrapper}>
       <div className={styles.header}>
         <span className={styles.headerTitle}>{t('usage_dashboard.api_key_usage')}</span>
-        <span className={styles.headerHint}>{t('usage_dashboard.click_expand_hint')}</span>
+
       </div>
       <div className={styles.scroll}>
         <table className={styles.table}>
