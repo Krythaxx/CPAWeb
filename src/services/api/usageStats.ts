@@ -1132,11 +1132,30 @@ function readUsageQueueSuccess(record: Record<string, unknown>): boolean {
   return statusCode <= 0 || statusCode < 400;
 }
 
+const NESTED_SOURCE_KEYS = ['request', 'requestBody', 'request_body', 'body', 'payload', 'params', 'response', 'responseBody', 'response_body', 'result', 'data'];
+
 function readUsageQueueTextField(record: Record<string, unknown>, keys: string[]): string {
   for (const key of keys) {
     const value = record[key];
     if (typeof value === 'string' && value.trim()) {
       return value.trim();
+    }
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return String(value);
+    }
+  }
+  return '';
+}
+
+function readUsageQueueTextFieldDeep(record: Record<string, unknown>, keys: string[], depth = 0): string {
+  if (depth > 4) return '';
+  const top = readUsageQueueTextField(record, keys);
+  if (top) return top;
+  for (const nestedKey of NESTED_SOURCE_KEYS) {
+    const nested = record[nestedKey];
+    if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+      const result = readUsageQueueTextFieldDeep(nested as Record<string, unknown>, keys, depth + 1);
+      if (result) return result;
     }
   }
   return '';
@@ -1153,6 +1172,8 @@ function parseMemoryUsageQueueDetail(value: unknown): MemoryRequestLogDetail | n
     readUsageQueueTextField(record, SINGLE_MODEL_KEYS) ||
     readUsageQueueTextField(record, ['alias']);
   const provider = normalizeProviderKey(readUsageQueueTextField(record, PROVIDER_LOG_KEYS), '');
+  const rawAuthIndex = readUsageQueueTextFieldDeep(record, AUTH_INDEX_KEYS);
+  const authIndex = normalizeRecentRequestAuthIndex(rawAuthIndex);
 
   if (!model && tokenCountTotal(tokens) <= 0) {
     return null;
@@ -1167,6 +1188,7 @@ function parseMemoryUsageQueueDetail(value: unknown): MemoryRequestLogDetail | n
     ...(timestamp ? { timestamp } : {}),
     ...(provider ? { provider } : {}),
     ...(model ? { model } : {}),
+    ...(authIndex ? { authIndex } : {}),
     ...(apiKey ? { apiKey } : {}),
     success: readUsageQueueSuccess(record),
     tokens,
