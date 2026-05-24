@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import { authFilesApi } from '@/services/api';
+import { usageStatsApi } from '@/services/api/usageStats';
 import { apiClient } from '@/services/api/client';
-import { useNotificationStore } from '@/stores';
+import { useAuthStore, useNotificationStore } from '@/stores';
+import { useQuotaStore } from '@/stores/useQuotaStore';
 import type { AuthFileItem } from '@/types';
 import { formatFileSize } from '@/utils/format';
 import { MAX_AUTH_FILE_SIZE } from '@/utils/constants';
@@ -51,9 +53,33 @@ export type UseAuthFilesDataResult = {
   batchDelete: (names: string[]) => void;
 };
 
+const SERVICE_URL_STORAGE_KEY = 'cli-proxy-usage-service-url';
+const USAGE_SERVICE_PORT = '18317';
+
+function deriveDefaultServiceUrl(apiBase: string): string {
+  try {
+    const base = apiBase.replace(/\/+$/, '');
+    const url = new URL(base.startsWith('http') ? base : `http://${base}`);
+    if (url.protocol !== 'https:') {
+      url.port = USAGE_SERVICE_PORT;
+    }
+    return url.origin;
+  } catch {
+    return `http://localhost:${USAGE_SERVICE_PORT}`;
+  }
+}
+
+function loadServiceUrl(apiBase: string): string {
+  const stored = localStorage.getItem(SERVICE_URL_STORAGE_KEY);
+  if (stored) return stored;
+  return deriveDefaultServiceUrl(apiBase);
+}
+
 export function useAuthFilesData(): UseAuthFilesDataResult {
   const { t } = useTranslation();
   const { showNotification, showConfirmation } = useNotificationStore();
+  const apiBase = useAuthStore((s) => s.apiBase);
+  const managementKey = useAuthStore((s) => s.managementKey);
 
   const [files, setFiles] = useState<AuthFileItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -258,6 +284,19 @@ export function useAuthFilesData(): UseAuthFilesDataResult {
             const result = await authFilesApi.deleteFile(name);
             showNotification(t('auth_files.delete_success'), 'success');
             applyDeletedFiles(result.files.length > 0 ? result.files : [name]);
+
+            const serviceUrl = apiBase ? loadServiceUrl(apiBase) : '';
+            if (serviceUrl && managementKey) {
+              void usageStatsApi
+                .deleteAuthFileQuota(serviceUrl, managementKey, name)
+                .catch(() => {});
+            }
+            useQuotaStore.getState().setCodexQuota((prev) => {
+              if (!prev[name]) return prev;
+              const next = { ...prev };
+              delete next[name];
+              return next;
+            });
           } catch (err: unknown) {
             const errorMessage = err instanceof Error ? err.message : '';
             showNotification(`${t('notification.delete_failed')}: ${errorMessage}`, 'error');
@@ -267,7 +306,7 @@ export function useAuthFilesData(): UseAuthFilesDataResult {
         },
       });
     },
-    [applyDeletedFiles, showConfirmation, showNotification, t]
+    [apiBase, applyDeletedFiles, managementKey, showConfirmation, showNotification, t]
   );
 
   const handleDeleteAll = useCallback(
@@ -308,6 +347,15 @@ export function useAuthFilesData(): UseAuthFilesDataResult {
               showNotification(t('auth_files.delete_all_success'), 'success');
               setFiles((prev) => prev.filter((file) => isRuntimeOnlyAuthFile(file)));
               deselectAll();
+
+              const serviceUrl = apiBase ? loadServiceUrl(apiBase) : '';
+              const allNames = files.filter((f) => !isRuntimeOnlyAuthFile(f)).map((f) => f.name);
+              if (serviceUrl && managementKey) {
+                for (const n of allNames) {
+                  void usageStatsApi.deleteAuthFileQuota(serviceUrl, managementKey, n).catch(() => {});
+                }
+              }
+              useQuotaStore.getState().setCodexQuota({});
             } else {
               const filesToDelete = files.filter((file) => {
                 if (isRuntimeOnlyAuthFile(file)) return false;
@@ -343,6 +391,26 @@ export function useAuthFilesData(): UseAuthFilesDataResult {
               const failed = result.failed.length;
 
               applyDeletedFiles(result.files);
+
+              const serviceUrl = apiBase ? loadServiceUrl(apiBase) : '';
+              if (serviceUrl && managementKey) {
+                for (const deletedName of result.files) {
+                  void usageStatsApi
+                    .deleteAuthFileQuota(serviceUrl, managementKey, deletedName)
+                    .catch(() => {});
+                }
+              }
+              useQuotaStore.getState().setCodexQuota((prev) => {
+                const next = { ...prev };
+                let changed = false;
+                result.files.forEach((n: string) => {
+                  if (next[n]) {
+                    delete next[n];
+                    changed = true;
+                  }
+                });
+                return changed ? next : prev;
+              });
 
               if (failed === 0 && isDisabledOnly) {
                 showNotification(
@@ -406,7 +474,7 @@ export function useAuthFilesData(): UseAuthFilesDataResult {
         },
       });
     },
-    [applyDeletedFiles, deselectAll, files, showConfirmation, showNotification, t]
+    [apiBase, applyDeletedFiles, deselectAll, files, managementKey, showConfirmation, showNotification, t]
   );
 
   const handleDownload = useCallback(
@@ -609,6 +677,26 @@ export function useAuthFilesData(): UseAuthFilesDataResult {
             const result = await authFilesApi.deleteFiles(uniqueNames);
             applyDeletedFiles(result.files);
 
+            const serviceUrl = apiBase ? loadServiceUrl(apiBase) : '';
+            if (serviceUrl && managementKey) {
+              for (const deletedName of result.files) {
+                void usageStatsApi
+                  .deleteAuthFileQuota(serviceUrl, managementKey, deletedName)
+                  .catch(() => {});
+              }
+            }
+            useQuotaStore.getState().setCodexQuota((prev) => {
+              const next = { ...prev };
+              let changed = false;
+              result.files.forEach((n) => {
+                if (next[n]) {
+                  delete next[n];
+                  changed = true;
+                }
+              });
+              return changed ? next : prev;
+            });
+
             if (result.failed.length === 0) {
               showNotification(
                 `${t('auth_files.delete_all_success')} (${result.deleted})`,
@@ -631,7 +719,7 @@ export function useAuthFilesData(): UseAuthFilesDataResult {
         },
       });
     },
-    [applyDeletedFiles, showConfirmation, showNotification, t]
+    [apiBase, applyDeletedFiles, managementKey, showConfirmation, showNotification, t]
   );
 
   return {

@@ -12,7 +12,9 @@ import {
 } from '@/components/ui/icons';
 import { ProviderStatusBar } from '@/components/providers/ProviderStatusBar';
 import type { AuthFileItem } from '@/types';
-import { resolveAuthProvider } from '@/utils/quota';
+import type { CodexQuotaState } from '@/types/quota';
+import { isCodexFile, resolveAuthProvider } from '@/utils/quota';
+import { useQuotaStore } from '@/stores/useQuotaStore';
 import {
   normalizeRecentRequestAuthIndex,
   normalizeRecentRequestBuckets,
@@ -91,6 +93,14 @@ export function AuthFileCard(props: AuthFileCardProps) {
   const isRuntimeOnly = isRuntimeOnlyAuthFile(file);
   const providerKey = normalizeProviderKey(String(file.type ?? file.provider ?? 'unknown'));
   const isAistudio = providerKey === 'aistudio';
+
+  const codexQuota = useQuotaStore((s) =>
+    isCodexFile(file) ? (s.codexQuota[file.name] as CodexQuotaState | undefined) : undefined
+  );
+  const weeklyResetLabel =
+    codexQuota?.status === 'success' && codexQuota.windows.length > 0
+      ? (codexQuota.windows.find((w) => w.id.includes('weekly'))?.resetLabel ?? '')
+      : '';
   const showModelsButton = !isRuntimeOnly || isAistudio;
   const typeColor = getTypeColor(providerKey, resolvedTheme);
   const typeLabel = getTypeLabel(t, providerKey);
@@ -242,6 +252,9 @@ export function AuthFileCard(props: AuthFileCardProps) {
                 <span className={styles.statLabel}>{t('stats.failure')}</span>
                 <span className={styles.statValue}>{fileStats.failure}</span>
               </div>
+              {weeklyResetLabel && (
+                <span className={styles.weeklyResetLabel}>{weeklyResetLabel}</span>
+              )}
             </div>
 
             <div className={`${styles.statusPanel} ${compact ? styles.statusPanelCompact : ''}`}>
