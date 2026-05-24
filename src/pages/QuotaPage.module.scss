@@ -652,13 +652,15 @@
   min-height: 28px;
 }
 
-.cardHeaderToggle {
-  margin-left: auto;
-  flex-shrink: 0;
+.cardToggleRow {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 $spacing-sm;
+  margin-top: -$spacing-xs;
+  margin-bottom: $spacing-xs;
   transform: scale(0.5);
   transform-origin: right center;
   height: 12px;
-  width: 22px;
 }
 
 .typeBadge {

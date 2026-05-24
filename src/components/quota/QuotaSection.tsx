@@ -10,7 +10,6 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { triggerHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { useAuthStore, useNotificationStore, useQuotaStore, useThemeStore } from '@/stores';
 import { usageStatsApi, type AuthFileQuotaEntry } from '@/services/api/usageStats';
-import { authFilesApi } from '@/services/api';
 import { normalizeApiBase } from '@/utils/connection';
 import type { AuthFileItem, ResolvedTheme } from '@/types';
 import { getStatusFromError } from '@/utils/quota';
@@ -120,13 +119,15 @@ interface QuotaSectionProps<TState extends QuotaStatusState, TData> {
   files: AuthFileItem[];
   loading: boolean;
   disabled: boolean;
+  onToggleFileStatus?: (file: AuthFileItem, enabled: boolean) => Promise<void>;
 }
 
 export function QuotaSection<TState extends QuotaStatusState, TData>({
   config,
   files,
   loading,
-  disabled
+  disabled,
+  onToggleFileStatus
 }: QuotaSectionProps<TState, TData>) {
   const { t } = useTranslation();
   const resolvedTheme: ResolvedTheme = useThemeStore((state) => state.resolvedTheme);
@@ -333,20 +334,15 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
 
   const handleToggleStatus = useCallback(
     async (file: AuthFileItem, enabled: boolean) => {
-      if (disabled) return;
+      if (!onToggleFileStatus || disabled) return;
       setStatusUpdating((prev) => ({ ...prev, [file.name]: true }));
       try {
-        await authFilesApi.setStatus(file.name, !enabled);
-      } catch {
-        showNotification(
-          t('auth_files.status_update_failed', { defaultValue: 'Failed to update status' }),
-          'error'
-        );
+        await onToggleFileStatus(file, enabled);
       } finally {
         setStatusUpdating((prev) => ({ ...prev, [file.name]: false }));
       }
     },
-    [disabled, showNotification, t]
+    [onToggleFileStatus, disabled]
   );
 
   return (

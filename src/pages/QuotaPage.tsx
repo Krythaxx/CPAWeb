@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { useAuthStore } from '@/stores';
+import { useNotificationStore } from '@/stores/useNotificationStore';
 import { authFilesApi, configFileApi } from '@/services/api';
 import {
   QuotaSection,
@@ -22,12 +23,36 @@ import styles from './QuotaPage.module.scss';
 export function QuotaPage() {
   const { t } = useTranslation();
   const connectionStatus = useAuthStore((state) => state.connectionStatus);
+  const showNotification = useNotificationStore((state) => state.showNotification);
 
   const [files, setFiles] = useState<AuthFileItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   const disableControls = connectionStatus !== 'connected';
+
+  const handleStatusToggle = useCallback(
+    async (item: AuthFileItem, enabled: boolean) => {
+      const nextDisabled = !enabled;
+      const previousDisabled = item.disabled === true;
+      setFiles((prev) => prev.map((f) => (f.name === item.name ? { ...f, disabled: nextDisabled } : f)));
+      try {
+        const res = await authFilesApi.setStatus(item.name, nextDisabled);
+        setFiles((prev) => prev.map((f) => (f.name === item.name ? { ...f, disabled: res.disabled } : f)));
+        showNotification(
+          enabled
+            ? t('auth_files.status_enabled_success', { name: item.name })
+            : t('auth_files.status_disabled_success', { name: item.name }),
+          'success'
+        );
+      } catch (err: unknown) {
+        setFiles((prev) => prev.map((f) => (f.name === item.name ? { ...f, disabled: previousDisabled } : f)));
+        const errorMessage = err instanceof Error ? err.message : '';
+        showNotification(`${t('notification.update_failed')}: ${errorMessage}`, 'error');
+      }
+    },
+    [t, showNotification]
+  );
 
   const loadConfig = useCallback(async () => {
     try {
@@ -77,36 +102,42 @@ export function QuotaPage() {
         files={files}
         loading={loading}
         disabled={disableControls}
+        onToggleFileStatus={handleStatusToggle}
       />
       <QuotaSection
         config={ANTIGRAVITY_CONFIG}
         files={files}
         loading={loading}
         disabled={disableControls}
+        onToggleFileStatus={handleStatusToggle}
       />
       <QuotaSection
         config={CODEX_CONFIG}
         files={files}
         loading={loading}
         disabled={disableControls}
+        onToggleFileStatus={handleStatusToggle}
       />
       <QuotaSection
         config={XAI_CONFIG}
         files={files}
         loading={loading}
         disabled={disableControls}
+        onToggleFileStatus={handleStatusToggle}
       />
       <QuotaSection
         config={GEMINI_CLI_CONFIG}
         files={files}
         loading={loading}
         disabled={disableControls}
+        onToggleFileStatus={handleStatusToggle}
       />
       <QuotaSection
         config={KIMI_CONFIG}
         files={files}
         loading={loading}
         disabled={disableControls}
+        onToggleFileStatus={handleStatusToggle}
       />
     </div>
   );

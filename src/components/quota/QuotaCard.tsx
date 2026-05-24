@@ -123,17 +123,18 @@ export function QuotaCard<TState extends QuotaStatusState>({
           {getTypeLabel(displayType)}
         </span>
         <span className={styles.fileName}>{item.name}</span>
-        {onToggleStatus && (
-          <div className={styles.cardHeaderToggle}>
-            <ToggleSwitch
-              checked={!item.disabled}
-              onChange={(checked) => onToggleStatus(checked)}
-              disabled={statusUpdating}
-              ariaLabel={t('auth_files.status_toggle_label')}
-            />
-          </div>
-        )}
       </div>
+
+      {onToggleStatus && (
+        <div className={styles.cardToggleRow}>
+          <ToggleSwitch
+            checked={!item.disabled}
+            onChange={(checked) => onToggleStatus(checked)}
+            disabled={statusUpdating}
+            ariaLabel={t('auth_files.status_toggle_label')}
+          />
+        </div>
+      )}
 
       <div className={styles.quotaSection}>
         {quotaStatus === 'loading' ? (
