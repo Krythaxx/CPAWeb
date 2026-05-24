@@ -253,7 +253,10 @@ export function AuthFileCard(props: AuthFileCardProps) {
                 <span className={styles.statValue}>{fileStats.failure}</span>
               </div>
               {weeklyResetLabel && (
-                <span className={styles.weeklyResetLabel}>{weeklyResetLabel}</span>
+                <span className={styles.weeklyResetLabel}>
+                  {t('auth_files.weekly_reset_label', { defaultValue: '周限重置：' })}
+                  {weeklyResetLabel}
+                </span>
               )}
             </div>
 
