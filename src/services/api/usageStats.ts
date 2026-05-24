@@ -2181,6 +2181,13 @@ export function buildMemoryProviders(
     }
   }
 
+  const providerConfigMap = new Map<string, ProviderConfigEntry>();
+  for (const entry of configEntries) {
+    if (!providerConfigMap.has(entry.provider)) {
+      providerConfigMap.set(entry.provider, entry);
+    }
+  }
+
   const authFileMap = new Map<string, AuthFileItem>();
   const authFileNameByProvider = new Map<string, { name: string; displayName: string }>();
   for (const file of authFiles) {
@@ -2214,6 +2221,14 @@ export function buildMemoryProviders(
     }
     if (configEntry?.name && configEntry.name !== configEntry.type) {
       return configEntry.name;
+    }
+    const providerConfig = providerConfigMap.get(providerKey);
+    if (providerConfig?.prefix) {
+      return providerConfig.prefix;
+    }
+    if (providerConfig?.baseUrl) {
+      const display = baseURLDisplayName(providerConfig.baseUrl);
+      if (display) return display;
     }
     if (authIndex) {
       return `auth-index/${authIndex}`;
@@ -2298,6 +2313,9 @@ export function buildMemoryProviders(
       const v = entry[k];
       if (typeof v === 'string' && v.trim()) return v.trim();
       if (typeof v === 'number') return String(v);
+    }
+    if (authKey && authIndexMap.has(authKey)) {
+      return authKey;
     }
     if (authKey && apiKeyPrefixMap.has(authKey)) {
       return apiKeyPrefixMap.get(authKey)!;
