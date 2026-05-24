@@ -8,7 +8,10 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { triggerHeaderRefresh } from '@/hooks/useHeaderRefresh';
-import { useNotificationStore, useQuotaStore, useThemeStore } from '@/stores';
+import { useAuthStore, useNotificationStore, useQuotaStore, useThemeStore } from '@/stores';
+import { usageStatsApi, type AuthFileQuotaEntry } from '@/services/api/usageStats';
+import { authFilesApi } from '@/services/api';
+import { normalizeApiBase } from '@/utils/connection';
 import type { AuthFileItem, ResolvedTheme } from '@/types';
 import { getStatusFromError } from '@/utils/quota';
 import { QuotaCard } from './QuotaCard';
@@ -27,6 +30,27 @@ type ViewMode = 'paged' | 'all';
 
 const MAX_ITEMS_PER_PAGE = 25;
 const MAX_SHOW_ALL_THRESHOLD = 30;
+const STORAGE_KEY_SERVICE_URL = 'cli-proxy-usage-service-url';
+const USAGE_SERVICE_PORT = '18317';
+
+function deriveDefaultServiceUrl(apiBase: string): string {
+  try {
+    const base = normalizeApiBase(apiBase);
+    const url = new URL(base);
+    if (url.protocol !== 'https:') {
+      url.port = USAGE_SERVICE_PORT;
+    }
+    return url.origin;
+  } catch {
+    return `http://localhost:${USAGE_SERVICE_PORT}`;
+  }
+}
+
+function loadServiceUrl(apiBase: string): string {
+  const stored = localStorage.getItem(STORAGE_KEY_SERVICE_URL);
+  if (stored) return stored;
+  return deriveDefaultServiceUrl(apiBase);
+}
 
 interface QuotaPaginationState<T> {
   pageSize: number;
@@ -107,6 +131,8 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
   const { t } = useTranslation();
   const resolvedTheme: ResolvedTheme = useThemeStore((state) => state.resolvedTheme);
   const showNotification = useNotificationStore((state) => state.showNotification);
+  const apiBase = useAuthStore((state) => state.apiBase);
+  const managementKey = useAuthStore((state) => state.managementKey);
   const setQuota = useQuotaStore((state) => state[config.storeSetter]) as QuotaSetter<
     Record<string, TState>
   >;
@@ -165,6 +191,20 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
 
   const pendingQuotaRefreshRef = useRef(false);
   const prevFilesLoadingRef = useRef(loading);
+  const batchSyncDoneRef = useRef(false);
+
+  const serviceUrl = apiBase ? loadServiceUrl(apiBase) : '';
+  const canSync = Boolean(serviceUrl && managementKey);
+
+  const syncQuotasToBackend = useCallback(
+    (entries: AuthFileQuotaEntry[]) => {
+      if (!canSync || entries.length === 0) return;
+      void usageStatsApi.saveAuthFileQuotas(serviceUrl, managementKey!, entries).catch((err) => {
+        console.warn('[QuotaSection] failed to sync quotas to backend:', err);
+      });
+    },
+    [canSync, serviceUrl, managementKey]
+  );
 
   const handleRefresh = useCallback(() => {
     pendingQuotaRefreshRef.current = true;
@@ -183,6 +223,7 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
     const scope = effectiveViewMode === 'all' ? 'all' : 'page';
     const targets = effectiveViewMode === 'all' ? filteredFiles : pageItems;
     if (targets.length === 0) return;
+    batchSyncDoneRef.current = false;
     loadQuota(targets, scope, setLoading);
   }, [loading, effectiveViewMode, filteredFiles, pageItems, loadQuota, setLoading]);
 
@@ -204,6 +245,32 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
     });
   }, [filteredFiles, loading, setQuota]);
 
+  useEffect(() => {
+    if (batchSyncDoneRef.current) return;
+    if (sectionLoading) return;
+    if (!config.extractQuotaSnapshot) return;
+    const targets = effectiveViewMode === 'all' ? filteredFiles : pageItems;
+    if (targets.length === 0) return;
+
+    const entries: AuthFileQuotaEntry[] = [];
+    for (const file of targets) {
+      const state = quota[file.name];
+      if (!state || (state as QuotaStatusState).status !== 'success') continue;
+      const snapshot = config.extractQuotaSnapshot(state);
+      if (!snapshot) continue;
+      entries.push({
+        authFileName: file.name,
+        remainingPercent: snapshot.remainingPercent,
+        resetTime: snapshot.resetTime,
+        provider: config.type,
+      });
+    }
+    if (entries.length > 0) {
+      syncQuotasToBackend(entries);
+    }
+    batchSyncDoneRef.current = true;
+  }, [sectionLoading, effectiveViewMode, filteredFiles, pageItems, quota, config, syncQuotasToBackend]);
+
   const refreshQuotaForFile = useCallback(
     async (file: AuthFileItem) => {
       if (disabled || file.disabled) return;
@@ -216,11 +283,24 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
 
       try {
         const data = await config.fetchQuota(file, t);
+        const successState = config.buildSuccessState(data);
         setQuota((prev) => ({
           ...prev,
-          [file.name]: config.buildSuccessState(data)
+          [file.name]: successState
         }));
         showNotification(t('auth_files.quota_refresh_success', { name: file.name }), 'success');
+
+        if (config.extractQuotaSnapshot) {
+          const snapshot = config.extractQuotaSnapshot(successState);
+          if (snapshot) {
+            syncQuotasToBackend([{
+              authFileName: file.name,
+              remainingPercent: snapshot.remainingPercent,
+              resetTime: snapshot.resetTime,
+              provider: config.type,
+            }]);
+          }
+        }
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : t('common.unknown_error');
         const status = getStatusFromError(err);
@@ -234,7 +314,7 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
         );
       }
     },
-    [config, disabled, quota, setQuota, showNotification, t]
+    [config, disabled, quota, setQuota, showNotification, t, syncQuotasToBackend]
   );
 
   const titleNode = (
@@ -249,6 +329,25 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
   );
 
   const isRefreshing = sectionLoading || loading;
+  const [statusUpdating, setStatusUpdating] = useState<Record<string, boolean>>({});
+
+  const handleToggleStatus = useCallback(
+    async (file: AuthFileItem, enabled: boolean) => {
+      if (disabled) return;
+      setStatusUpdating((prev) => ({ ...prev, [file.name]: true }));
+      try {
+        await authFilesApi.setStatus(file.name, !enabled);
+      } catch {
+        showNotification(
+          t('auth_files.status_update_failed', { defaultValue: 'Failed to update status' }),
+          'error'
+        );
+      } finally {
+        setStatusUpdating((prev) => ({ ...prev, [file.name]: false }));
+      }
+    },
+    [disabled, showNotification, t]
+  );
 
   return (
     <Card
@@ -320,6 +419,8 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
                 canRefresh={!disabled && !item.disabled}
                 onRefresh={() => void refreshQuotaForFile(item)}
                 renderQuotaItems={config.renderQuotaItems}
+                statusUpdating={statusUpdating[item.name] === true}
+                onToggleStatus={(enabled) => void handleToggleStatus(item, enabled)}
               />
             ))}
           </div>

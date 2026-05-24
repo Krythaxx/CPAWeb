@@ -136,6 +136,7 @@ export interface QuotaConfig<TState, TData> {
   controlClassName: string;
   gridClassName: string;
   renderQuotaItems: (quota: TState, t: TFunction, helpers: QuotaRenderHelpers) => ReactNode;
+  extractQuotaSnapshot?: (quota: TState) => { remainingPercent: number; resetTime: string } | null;
 }
 
 const resolveAntigravityProjectId = async (file: AuthFileItem): Promise<string> => {
@@ -1172,6 +1173,14 @@ export const CLAUDE_CONFIG: QuotaConfig<
   controlClassName: styles.claudeControl,
   gridClassName: styles.claudeGrid,
   renderQuotaItems: renderClaudeItems,
+  extractQuotaSnapshot: (quota) => {
+    if (quota.status !== 'success' || !quota.windows.length) return null;
+    const weekly = quota.windows.find((w) => w.id.startsWith('seven-day'));
+    const window = weekly ?? quota.windows[0];
+    const used = window.usedPercent;
+    const remaining = used !== null ? Math.max(0, Math.min(100, 100 - used)) : 0;
+    return { remainingPercent: Math.round(remaining), resetTime: window.resetLabel || '' };
+  },
 };
 
 export const ANTIGRAVITY_CONFIG: QuotaConfig<AntigravityQuotaState, AntigravityQuotaGroup[]> = {
@@ -1195,6 +1204,12 @@ export const ANTIGRAVITY_CONFIG: QuotaConfig<AntigravityQuotaState, AntigravityQ
   controlClassName: styles.antigravityControl,
   gridClassName: styles.antigravityGrid,
   renderQuotaItems: renderAntigravityItems,
+  extractQuotaSnapshot: (quota) => {
+    if (quota.status !== 'success' || !quota.groups.length) return null;
+    const group = quota.groups[0];
+    const remaining = Math.round(Math.max(0, Math.min(1, group.remainingFraction)) * 100);
+    return { remainingPercent: remaining, resetTime: group.resetTime || '' };
+  },
 };
 
 export const CODEX_CONFIG: QuotaConfig<
@@ -1225,6 +1240,14 @@ export const CODEX_CONFIG: QuotaConfig<
   controlClassName: styles.codexControl,
   gridClassName: styles.codexGrid,
   renderQuotaItems: renderCodexItems,
+  extractQuotaSnapshot: (quota) => {
+    if (quota.status !== 'success' || !quota.windows.length) return null;
+    const weekly = quota.windows.find((w) => w.id.includes('weekly'));
+    const window = weekly ?? quota.windows[0];
+    const used = window.usedPercent;
+    const remaining = used !== null ? Math.max(0, Math.min(100, 100 - used)) : 0;
+    return { remainingPercent: Math.round(remaining), resetTime: window.resetLabel || '' };
+  },
 };
 
 export const GEMINI_CLI_CONFIG: QuotaConfig<
@@ -1278,6 +1301,13 @@ export const GEMINI_CLI_CONFIG: QuotaConfig<
   controlClassName: styles.geminiCliControl,
   gridClassName: styles.geminiCliGrid,
   renderQuotaItems: renderGeminiCliItems,
+  extractQuotaSnapshot: (quota) => {
+    if (quota.status !== 'success' || !quota.buckets.length) return null;
+    const bucket = quota.buckets[0];
+    const fraction = bucket.remainingFraction;
+    const remaining = fraction !== null ? Math.round(Math.max(0, Math.min(1, fraction)) * 100) : 0;
+    return { remainingPercent: remaining, resetTime: bucket.resetTime || '' };
+  },
 };
 
 const fetchKimiQuota = async (file: AuthFileItem, t: TFunction): Promise<KimiQuotaRow[]> => {
@@ -1524,6 +1554,12 @@ export const KIMI_CONFIG: QuotaConfig<KimiQuotaState, KimiQuotaRow[]> = {
   controlClassName: styles.kimiControl,
   gridClassName: styles.kimiGrid,
   renderQuotaItems: renderKimiItems,
+  extractQuotaSnapshot: (quota) => {
+    if (quota.status !== 'success' || !quota.rows.length) return null;
+    const row = quota.rows[0];
+    const remaining = row.limit > 0 ? Math.round(((row.limit - row.used) / row.limit) * 100) : 0;
+    return { remainingPercent: Math.max(0, remaining), resetTime: row.resetHint || '' };
+  },
 };
 
 export const XAI_CONFIG: QuotaConfig<XaiQuotaState, XaiBillingSummary> = {
@@ -1547,4 +1583,10 @@ export const XAI_CONFIG: QuotaConfig<XaiQuotaState, XaiBillingSummary> = {
   controlClassName: styles.xaiControl,
   gridClassName: styles.xaiGrid,
   renderQuotaItems: renderXaiItems,
+  extractQuotaSnapshot: (quota) => {
+    if (quota.status !== 'success' || !quota.billing) return null;
+    const used = quota.billing.usedPercent;
+    const remaining = used !== null ? Math.max(0, Math.min(100, 100 - used)) : 0;
+    return { remainingPercent: Math.round(remaining), resetTime: quota.billing.billingPeriodEnd || '' };
+  },
 };

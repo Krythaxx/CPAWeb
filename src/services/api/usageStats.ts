@@ -277,6 +277,14 @@ function resolveServiceUrl(serviceUrl: string): string {
   return base;
 }
 
+export interface AuthFileQuotaEntry {
+  authFileName: string;
+  remainingPercent: number;
+  resetTime: string;
+  provider: string;
+  updatedAt?: string;
+}
+
 export const usageStatsApi = {
   async fetchPersistentStats(
     serviceUrl: string,
@@ -338,6 +346,53 @@ export const usageStatsApi = {
     } catch {
       return false;
     }
+  },
+
+  async saveAuthFileQuotas(
+    serviceUrl: string,
+    managementKey: string,
+    entries: AuthFileQuotaEntry[],
+  ): Promise<void> {
+    const base = resolveServiceUrl(serviceUrl);
+    await axios.put(
+      `${base}/v0/management/usage/auth-file-quotas`,
+      entries,
+      {
+        headers: { Authorization: `Bearer ${managementKey}` },
+        timeout: USAGE_SERVICE_TIMEOUT_MS,
+      },
+    );
+  },
+
+  async fetchAuthFileQuotas(
+    serviceUrl: string,
+    managementKey: string,
+  ): Promise<AuthFileQuotaEntry[]> {
+    const base = resolveServiceUrl(serviceUrl);
+    const response = await axios.get<AuthFileQuotaEntry[]>(
+      `${base}/v0/management/usage/auth-file-quotas`,
+      {
+        headers: { Authorization: `Bearer ${managementKey}` },
+        timeout: USAGE_SERVICE_TIMEOUT_MS,
+      },
+    );
+    return Array.isArray(response.data) ? response.data : [];
+  },
+
+  async deleteAuthFileQuota(
+    serviceUrl: string,
+    managementKey: string,
+    name: string,
+  ): Promise<void> {
+    const base = resolveServiceUrl(serviceUrl);
+    await axios.delete(
+      `${base}/v0/management/usage/auth-file-quotas`,
+      {
+        params: { name },
+        headers: { Authorization: `Bearer ${managementKey}` },
+        timeout: USAGE_SERVICE_TIMEOUT_MS,
+      },
+    );
   },
 
   async fetchMemoryStats(): Promise<MemoryStatsPayload> {

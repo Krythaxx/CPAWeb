@@ -5,6 +5,7 @@
 import { useTranslation } from 'react-i18next';
 import type { ReactElement, ReactNode } from 'react';
 import type { TFunction } from 'i18next';
+import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
 import type { AuthFileItem, ResolvedTheme, ThemeColors } from '@/types';
 import { TYPE_COLORS } from '@/utils/quota';
 import styles from '@/pages/QuotaPage.module.scss';
@@ -67,6 +68,8 @@ interface QuotaCardProps<TState extends QuotaStatusState> {
   canRefresh?: boolean;
   onRefresh?: () => void;
   renderQuotaItems: (quota: TState, t: TFunction, helpers: QuotaRenderHelpers) => ReactNode;
+  statusUpdating?: boolean;
+  onToggleStatus?: (enabled: boolean) => void;
 }
 
 export function QuotaCard<TState extends QuotaStatusState>({
@@ -79,7 +82,9 @@ export function QuotaCard<TState extends QuotaStatusState>({
   defaultType,
   canRefresh = false,
   onRefresh,
-  renderQuotaItems
+  renderQuotaItems,
+  statusUpdating,
+  onToggleStatus
 }: QuotaCardProps<TState>) {
   const { t } = useTranslation();
 
@@ -118,6 +123,16 @@ export function QuotaCard<TState extends QuotaStatusState>({
           {getTypeLabel(displayType)}
         </span>
         <span className={styles.fileName}>{item.name}</span>
+        {onToggleStatus && (
+          <div className={styles.cardHeaderToggle}>
+            <ToggleSwitch
+              checked={!item.disabled}
+              onChange={(checked) => onToggleStatus(checked)}
+              disabled={statusUpdating}
+              ariaLabel={t('auth_files.status_toggle_label')}
+            />
+          </div>
+        )}
       </div>
 
       <div className={styles.quotaSection}>
