@@ -100,6 +100,16 @@ export function QuotaCard<TState extends QuotaStatusState>({
     quota?.error || t('common.unknown_error')
   );
   const idleMessageKey = onRefresh ? `${i18nPrefix}.idle` : (cardIdleMessageKey ?? `${i18nPrefix}.idle`);
+  const statusToggleControl = onToggleStatus ? (
+    <div className={styles.quotaStatusToggle}>
+      <ToggleSwitch
+        checked={!item.disabled}
+        onChange={(checked) => onToggleStatus(checked)}
+        disabled={statusUpdating}
+        ariaLabel={t('auth_files.status_toggle_label')}
+      />
+    </div>
+  ) : null;
 
   const getTypeLabel = (type: string): string => {
     const key = `auth_files.filter_${type}`;
@@ -125,18 +135,10 @@ export function QuotaCard<TState extends QuotaStatusState>({
         <span className={styles.fileName}>{item.name}</span>
       </div>
 
-      {onToggleStatus && (
-        <div className={styles.cardToggleRow}>
-          <ToggleSwitch
-            checked={!item.disabled}
-            onChange={(checked) => onToggleStatus(checked)}
-            disabled={statusUpdating}
-            ariaLabel={t('auth_files.status_toggle_label')}
-          />
-        </div>
-      )}
-
-      <div className={styles.quotaSection}>
+      <div
+        className={`${styles.quotaSection} ${statusToggleControl ? styles.quotaSectionWithToggle : ''}`}
+      >
+        {statusToggleControl}
         {quotaStatus === 'loading' ? (
           <div className={styles.quotaMessage}>{t(`${i18nPrefix}.loading`)}</div>
         ) : quotaStatus === 'idle' ? (

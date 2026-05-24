@@ -274,12 +274,35 @@
 }
 
 .quotaSection {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: $spacing-sm;
   padding-top: $spacing-sm;
   margin-top: $spacing-xs;
   border-top: 1px dashed var(--border-color);
+}
+
+.quotaSectionWithToggle {
+  min-height: 24px;
+
+  .codexPlan,
+  .quotaRowHeader,
+  .quotaMessage,
+  .quotaError,
+  .quotaWarning {
+    padding-right: 34px;
+  }
+}
+
+.quotaStatusToggle {
+  position: absolute;
+  top: $spacing-sm;
+  right: $spacing-sm;
+  z-index: 1;
+  transform: scale(0.5);
+  transform-origin: right top;
+  height: 12px;
 }
 
 .quotaRow {
@@ -650,17 +673,6 @@
   align-items: center;
   gap: $spacing-sm;
   min-height: 28px;
-}
-
-.cardToggleRow {
-  display: flex;
-  justify-content: flex-end;
-  padding: 0 $spacing-sm;
-  margin-top: -$spacing-xs;
-  margin-bottom: $spacing-xs;
-  transform: scale(0.5);
-  transform-origin: right center;
-  height: 12px;
 }
 
 .typeBadge {
