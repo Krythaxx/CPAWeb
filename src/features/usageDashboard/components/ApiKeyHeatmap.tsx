@@ -128,36 +128,36 @@ export function ApiKeyHeatmap({
   }, [buckets, colCount]);
 
   const handleMouseEnter = useCallback(
-    (e: React.MouseEvent, bucket: HeatmapBucket, isIdle: boolean) => {
+    (_e: React.MouseEvent, bucket: HeatmapBucket, isIdle: boolean, index: number) => {
       const cardRect = cardRef.current?.getBoundingClientRect();
-      const gridRect = gridRef.current?.getBoundingClientRect();
-      if (!cardRect || !gridRect) return;
+      const gridEl = gridRef.current;
+      if (!cardRect || !gridEl) return;
 
-      const dotX = e.clientX - gridRect.left;
-      const dotY = e.clientY - gridRect.top;
+      const gridRect = gridEl.getBoundingClientRect();
+      const gridLeftInCard = gridRect.left - cardRect.left;
       const gridTopInCard = gridRect.top - cardRect.top;
-      const tooltipOffset = 12;
-      const tooltipWidth = tooltipRef.current?.offsetWidth ?? 180;
-      const tooltipHeight = tooltipRef.current?.offsetHeight ?? 60;
+      const gridHeight = gridRect.height;
 
-      let x = gridRect.left - cardRect.left + dotX - tooltipWidth / 2;
-      let y = gridTopInCard + dotY - tooltipHeight - tooltipOffset;
+      const col = index % colCount;
+      const dotCenterX = col * (DOT_SIZE + GAP) + DOT_SIZE / 2;
+
+      const tooltipOffset = 8;
+      const tooltipWidth = tooltipRef.current?.offsetWidth ?? 180;
+      const tooltipHeight = tooltipRef.current?.offsetHeight ?? 80;
+
+      let x = gridLeftInCard + dotCenterX - tooltipWidth / 2;
+      let y = gridTopInCard - tooltipHeight - tooltipOffset;
 
       if (x < 0) x = 0;
       if (x + tooltipWidth > cardRect.width) x = cardRect.width - tooltipWidth;
 
       if (y < 0) {
-        const flippedY = gridTopInCard + dotY + DOT_SIZE + tooltipOffset;
-        if (flippedY + tooltipHeight <= cardRect.height) {
-          y = flippedY;
-        } else {
-          y = Math.max(0, cardRect.height - tooltipHeight);
-        }
+        y = gridTopInCard + gridHeight + tooltipOffset;
       }
 
       setTooltip({ x, y, bucket, isIdle });
     },
-    [],
+    [colCount],
   );
 
   const handleMouseLeave = useCallback(() => {
@@ -198,7 +198,7 @@ export function ApiKeyHeatmap({
               key={i}
               className={styles.dot}
               style={{ backgroundColor: dotColor(bucket.successRate, total) }}
-              onMouseEnter={(e) => handleMouseEnter(e, bucket, bucket.isIdle)}
+              onMouseEnter={(e) => handleMouseEnter(e, bucket, bucket.isIdle, i)}
               onMouseLeave={handleMouseLeave}
             />
           );
