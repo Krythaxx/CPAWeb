@@ -341,10 +341,10 @@ export const usageStatsApi = {
   async probeService(serviceUrl: string): Promise<boolean> {
     try {
       const base = resolveServiceUrl(serviceUrl);
-      await axios.get(`${base}/healthz`, {
-        timeout: 3000,
+      const res = await axios.get(`${base}/v0/management/usage/healthz`, {
+        timeout: 1000,
       });
-      return true;
+      return res.data?.status === 'ok';
     } catch {
       return false;
     }
