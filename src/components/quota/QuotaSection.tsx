@@ -225,7 +225,6 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
     const scope = effectiveViewMode === 'all' ? 'all' : 'page';
     const targets = effectiveViewMode === 'all' ? filteredFiles : pageItems;
     if (targets.length === 0) return;
-    batchSyncDoneRef.current = false;
     loadQuota(targets, scope, setLoading);
   }, [loading, effectiveViewMode, filteredFiles, pageItems, loadQuota, setLoading]);
 
@@ -248,8 +247,11 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
   }, [filteredFiles, loading, setQuota]);
 
   useEffect(() => {
+    if (sectionLoading) {
+      batchSyncDoneRef.current = false;
+      return;
+    }
     if (batchSyncDoneRef.current) return;
-    if (sectionLoading) return;
     if (!config.extractQuotaSnapshot) return;
     const targets = effectiveViewMode === 'all' ? filteredFiles : pageItems;
     if (targets.length === 0) return;
